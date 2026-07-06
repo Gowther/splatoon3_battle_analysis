@@ -18,6 +18,7 @@ Use these entrypoints for active development:
 | `python scripts/evaluate_matches.py` | Fixed match evaluation with count smoothing and heatmap quality checks. |
 | `python scripts/intake_match.py` | Register new local match videos and generate registry/evaluation entries. |
 | `python scripts/report_model_quality.py` | Aggregate registry, evaluation, weapon training, and asset status. |
+| `python scripts/report_model_errors.py` | Report likely YOLO/OCR/weapon risk signals from analysis CSVs. |
 | `python scripts/validate_data_registry.py` | Validate local videos, analysis windows, and heatmap artifacts. |
 | `python scripts/report_heatmap_quality.py` | Generate heatmap trajectory quality reports from the data registry. |
 | `python scripts/export_heatmap_annotation_package.py` | Export frames and CSV templates for manual heatmap point labels. |
@@ -103,6 +104,8 @@ Move shared logic out of large scripts without changing behavior:
   registry/evaluation updates for new videos such as `match_12` or `match_13`.
 - Current bridge: `scripts/report_model_quality.py` gives one Markdown/JSON
   overview for deciding whether to add data, retrain, or evaluate model swaps.
+- Current bridge: `scripts/report_model_errors.py` turns analysis CSVs into a
+  model/OCR risk report before any model replacement work starts.
 
 ## Phase 6: Productize Analysis Outputs
 
@@ -145,6 +148,7 @@ source scripts/use_local_env.sh
 python scripts/inventory_project.py --output outputs/project_inventory.json
 python scripts/intake_match.py --match-id match_12 --video footages/match_12.mp4 --start-seconds 10 --stop-seconds 150 --dry-run --strict
 python scripts/report_model_quality.py --output outputs/model_quality.md --json-output outputs/model_quality.json
+python scripts/report_model_errors.py --evaluation-results outputs/evaluation/evaluation_results.json --output outputs/model_errors.md --json-output outputs/model_errors.json
 python scripts/validate_data_registry.py --output outputs/data_registry.json --report outputs/data_registry.md --strict
 python scripts/report_csv.py outputs/match_1.csv
 python scripts/report_heatmap_quality.py --output-dir outputs/heatmap_quality --strict

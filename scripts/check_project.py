@@ -307,6 +307,20 @@ def main() -> int:
             ],
             env,
         )
+        run_step(
+            "model error report helper",
+            [
+                PYTHON,
+                "scripts/report_model_errors.py",
+                "--csv",
+                work_dir / "sample.csv",
+                "--output",
+                work_dir / "model_errors.md",
+                "--json-output",
+                work_dir / "model_errors.json",
+            ],
+            env,
+        )
 
     if args.evaluation:
         run_step(

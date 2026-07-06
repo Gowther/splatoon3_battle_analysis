@@ -105,6 +105,23 @@ python scripts/report_model_quality.py \
 If your latest fixed evaluation lives outside `outputs/evaluation/`, pass that
 `evaluation_results.json` path with `--evaluation-results`.
 
+## Model Error Reports
+
+Use the model error report before deciding whether a problem belongs to YOLO,
+OCR, weapon classification, thresholds, or missing data:
+
+```bash
+source scripts/use_local_env.sh
+python scripts/report_model_errors.py \
+  --evaluation-results outputs/evaluation/evaluation_results.json \
+  --output outputs/model_errors.md \
+  --json-output outputs/model_errors.json
+```
+
+The report flags CSV-level risk signals such as missing player states, unstable
+weapon rows, sparse count OCR, count jumps, and message OCR activity. These are
+triage hints, not a replacement for manual labels.
+
 ## Adding New Data
 
 Start with the intake helper so registry and evaluation config stay in sync:
