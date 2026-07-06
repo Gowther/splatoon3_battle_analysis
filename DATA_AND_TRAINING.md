@@ -151,3 +151,17 @@ python scripts/evaluate_matches.py --only match_12_10_150 --run-analysis --stric
 Keep notes about video source, mode, stage, team colors, and visible OCR or
 weapon mistakes. Only promote data into training/evaluation baselines once
 labels or expected outputs are documented.
+
+Current new-data smoke sample:
+
+```bash
+python scripts/evaluate_matches.py --only match_11_20_40 --run-analysis --strict
+python scripts/report_model_quality.py \
+  --evaluation-results outputs/evaluation/evaluation_results.json \
+  --output outputs/model_quality.md \
+  --json-output outputs/model_quality.json
+```
+
+`match_11_20_40` is intentionally a short analysis-candidate window. Use it to
+verify the intake/evaluation path before promoting longer windows with fixed
+expected metrics.

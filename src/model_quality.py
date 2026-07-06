@@ -84,17 +84,26 @@ def registry_summary(path: Path = DEFAULT_REGISTRY) -> dict[str, Any]:
 def evaluation_config_summary(path: Path = DEFAULT_EVALUATION_CONFIG) -> dict[str, Any]:
     config_path = project_path(path)
     config = load_json_if_exists(config_path) or {}
+    analysis_ids = [match.get("id", "") for match in config.get("analysis_matches", [])]
+    heatmap_ids = [match.get("id", "") for match in config.get("heatmap_matches", [])]
     return {
         "path": display_path(config_path),
         "exists": config_path.exists(),
-        "analysis_match_count": len(config.get("analysis_matches", [])),
-        "heatmap_match_count": len(config.get("heatmap_matches", [])),
+        "analysis_match_count": len(analysis_ids),
+        "heatmap_match_count": len(heatmap_ids),
+        "analysis_ids": analysis_ids,
+        "heatmap_ids": heatmap_ids,
+        "result_ids": [*analysis_ids, *heatmap_ids],
         "defaults": config.get("defaults", {}),
     }
 
 
-def evaluation_results_summary(path: Path = DEFAULT_EVALUATION_RESULTS) -> dict[str, Any]:
+def evaluation_results_summary(
+    path: Path = DEFAULT_EVALUATION_RESULTS,
+    configured_ids: list[str] | None = None,
+) -> dict[str, Any]:
     results_path = project_path(path)
+    expected_ids = set(configured_ids or [])
     results = load_json_if_exists(results_path)
     if results is None:
         return {
@@ -103,11 +112,17 @@ def evaluation_results_summary(path: Path = DEFAULT_EVALUATION_RESULTS) -> dict[
             "status": "missing",
             "status_counts": {},
             "kind_counts": {},
+            "result_ids": [],
+            "missing_configured_results": sorted(expected_ids),
+            "extra_results": [],
             "problems": [],
         }
 
     status_counts = Counter(str(item.get("status", "unknown")) for item in results)
     kind_counts = Counter(str(item.get("kind", "unknown")) for item in results)
+    result_ids = {str(item.get("id", "")) for item in results if item.get("id")}
+    missing_configured_results = sorted(expected_ids - result_ids)
+    extra_results = sorted(result_ids - expected_ids) if expected_ids else []
     problems = [
         {
             "kind": item.get("kind", ""),
@@ -119,13 +134,16 @@ def evaluation_results_summary(path: Path = DEFAULT_EVALUATION_RESULTS) -> dict[
         for item in results
         if item.get("status") != "passed"
     ]
-    status = "passed" if results and not problems else "failed"
+    status = "passed" if results and not problems and not missing_configured_results else "failed"
     return {
         "path": display_path(results_path),
         "exists": True,
         "status": status,
         "status_counts": dict(sorted(status_counts.items())),
         "kind_counts": dict(sorted(kind_counts.items())),
+        "result_ids": sorted(result_ids),
+        "missing_configured_results": missing_configured_results,
+        "extra_results": extra_results,
         "problems": problems,
     }
 
@@ -156,6 +174,8 @@ def recommendation_list(payload: dict[str, Any]) -> list[str]:
         recommendations.append("Fix missing registry videos before promoting new evaluation data.")
     if not evaluation["exists"]:
         recommendations.append("Run scripts/evaluate_matches.py and pass --evaluation-results to this report.")
+    elif evaluation["missing_configured_results"]:
+        recommendations.append("Regenerate the full fixed evaluation so every configured match has a result.")
     elif evaluation["problems"]:
         recommendations.append("Review failed or skipped evaluation items before changing models.")
     if weapon["status"] != "passed":
@@ -186,10 +206,14 @@ def build_quality_payload(
     labels: Path = ROOT / "main_weapon_list.txt",
     weapon_model: Path | None = ROOT / "models" / "main_weapons_classification_weight.pth",
 ) -> dict[str, Any]:
+    evaluation_config_payload = evaluation_config_summary(evaluation_config)
     payload = {
         "registry": registry_summary(registry),
-        "evaluation_config": evaluation_config_summary(evaluation_config),
-        "evaluation_results": evaluation_results_summary(evaluation_results),
+        "evaluation_config": evaluation_config_payload,
+        "evaluation_results": evaluation_results_summary(
+            evaluation_results,
+            configured_ids=evaluation_config_payload["result_ids"],
+        ),
         "weapon_training": weapon_training_summary(dataset, labels, weapon_model),
         "assets": asset_summary(),
     }
@@ -236,6 +260,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
         f"- results_status: `{eval_results['status']}`",
         f"- status_counts: {json.dumps(eval_results['status_counts'] or {}, ensure_ascii=False)}",
         f"- kind_counts: {json.dumps(eval_results['kind_counts'] or {}, ensure_ascii=False)}",
+        f"- missing_configured_results: {len(eval_results['missing_configured_results'])}",
         "",
         "## Weapon Classifier",
         "",
@@ -260,6 +285,11 @@ def render_markdown(payload: dict[str, Any]) -> str:
         for item in eval_results["problems"]:
             detail = item.get("reason") or "; ".join(item.get("notes", [])) or "no detail"
             lines.append(f"- {item['kind']} `{item['id']}`: {item['status']} ({detail})")
+
+    if eval_results["missing_configured_results"]:
+        lines.extend(["", "## Missing Evaluation Results", ""])
+        for item in eval_results["missing_configured_results"]:
+            lines.append(f"- `{item}`")
 
     if registry["missing_videos"]:
         lines.extend(["", "## Missing Registry Videos", ""])

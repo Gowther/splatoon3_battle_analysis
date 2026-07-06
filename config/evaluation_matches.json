@@ -28,6 +28,14 @@
       "quality_gates": {
         "max_smoothed_count_jump_warnings": 0
       }
+    },
+    {
+      "id": "match_11_20_40",
+      "input": "footages/match_11.mp4",
+      "start_seconds": 20.0,
+      "stop_seconds": 40.0,
+      "sample_fps": 5.0,
+      "device": "mps"
     }
   ],
   "heatmap_matches": [
