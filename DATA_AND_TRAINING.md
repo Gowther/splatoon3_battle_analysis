@@ -122,6 +122,21 @@ The report flags CSV-level risk signals such as missing player states, unstable
 weapon rows, sparse count OCR, count jumps, and message OCR activity. These are
 triage hints, not a replacement for manual labels.
 
+## Heatmap Comparison
+
+Once heatmap outputs are registered, compare matches and anomaly priorities:
+
+```bash
+source scripts/use_local_env.sh
+python scripts/report_heatmap_comparison.py \
+  --output outputs/heatmap_comparison.md \
+  --json-output outputs/heatmap_comparison.json \
+  --strict
+```
+
+Use the anomaly samples to pick frames for manual point labels before investing
+in coordinate normalization or event joins.
+
 ## Adding New Data
 
 Start with the intake helper so registry and evaluation config stay in sync:

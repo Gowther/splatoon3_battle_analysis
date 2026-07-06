@@ -16,6 +16,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/media.py` | Supported | Image/video frame iteration. |
 | `src/protocol.py` | Supported | 33-column CSV and GameState protocol contract. |
 | `src/heatmap/` | Supported | Heatmap calibration, player marker detection, trajectory quality, annotation, and anomaly helpers. |
+| `src/heatmap/comparison_report.py` | Supported | Cross-match heatmap quality and anomaly comparison reporting. |
 | `src/data_registry.py` | Supported | Data registry path resolution and validation support. |
 | `src/match_intake.py` | Supported | New match registry/evaluation intake planning and safe JSON updates. |
 | `src/model_quality.py` | Supported | Aggregated registry/evaluation/weapon/assets quality overview. |

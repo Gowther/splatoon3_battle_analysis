@@ -236,6 +236,19 @@ def main() -> int:
             ],
             env,
         )
+        run_step(
+            "heatmap comparison helper",
+            [
+                PYTHON,
+                "scripts/report_heatmap_comparison.py",
+                "--output",
+                work_dir / "heatmap_comparison.md",
+                "--json-output",
+                work_dir / "heatmap_comparison.json",
+                "--strict",
+            ],
+            env,
+        )
         run_step("weapon training plan helper", [PYTHON, "scripts/plan_weapon_training.py"], env)
         run_step("weapon training strict plan helper", [PYTHON, "scripts/plan_weapon_training.py", "--strict"], env)
         run_step(

@@ -21,6 +21,7 @@ Use these entrypoints for active development:
 | `python scripts/report_model_errors.py` | Report likely YOLO/OCR/weapon risk signals from analysis CSVs. |
 | `python scripts/validate_data_registry.py` | Validate local videos, analysis windows, and heatmap artifacts. |
 | `python scripts/report_heatmap_quality.py` | Generate heatmap trajectory quality reports from the data registry. |
+| `python scripts/report_heatmap_comparison.py` | Compare registered heatmap matches and trajectory anomalies. |
 | `python scripts/export_heatmap_annotation_package.py` | Export frames and CSV templates for manual heatmap point labels. |
 | `python scripts/evaluate_heatmap_annotations.py` | Evaluate heatmap predictions against manual player point labels. |
 | `python scripts/export_heatmap_anomalies.py` | Export low-quality heatmap frames for manual review. |
@@ -116,6 +117,9 @@ Move shared logic out of large scripts without changing behavior:
   pipeline remains stable.
 - Current bridge: `scripts/report_csv.py` provides a small report path for
   CSV-first analysis outputs while heatmap reporting evolves separately.
+- Current bridge: `scripts/report_heatmap_comparison.py` compares registered
+  heatmap matches and ranks trajectory anomalies before coordinate
+  normalization/event joins are available.
 
 ## Local Check Commands
 
@@ -152,6 +156,7 @@ python scripts/report_model_errors.py --evaluation-results outputs/evaluation/ev
 python scripts/validate_data_registry.py --output outputs/data_registry.json --report outputs/data_registry.md --strict
 python scripts/report_csv.py outputs/match_1.csv
 python scripts/report_heatmap_quality.py --output-dir outputs/heatmap_quality --strict
+python scripts/report_heatmap_comparison.py --output outputs/heatmap_comparison.md --json-output outputs/heatmap_comparison.json --strict
 python scripts/export_heatmap_annotation_package.py --output-dir outputs/annotation_samples
 python scripts/evaluate_heatmap_annotations.py outputs/annotation_samples/annotation_template.csv
 python scripts/export_heatmap_anomalies.py --output-dir outputs/heatmap_anomalies
