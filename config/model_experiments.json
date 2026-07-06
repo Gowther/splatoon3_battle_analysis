@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "description": "Planned model replacement experiments. These are comparison plans, not active runtime dependencies.",
+  "experiments": [
+    {
+      "id": "count_ocr_threshold_probe",
+      "area": "count_ocr",
+      "candidate": "Current number OCR with threshold/crop tuning",
+      "status": "planned",
+      "trigger_categories": ["count_ocr"],
+      "baseline_commands": [
+        "python scripts/evaluate_matches.py --output-dir outputs/evaluation --run-analysis --strict",
+        "python scripts/report_model_errors.py --evaluation-results outputs/evaluation/evaluation_results.json --output outputs/model_errors.md"
+      ],
+      "metrics": ["count_jump_warnings", "count_row_ratio", "smoothing_corrections"],
+      "pass_criteria": ["No increase in count jump warnings after smoothing", "Count rows remain stable on match_1 and new analysis windows"],
+      "notes": "Prefer this before replacing the detector because count OCR currently shows direct jump noise."
+    },
+    {
+      "id": "ui_detector_yolo11n_probe",
+      "area": "ui_detection",
+      "candidate": "YOLO11n or YOLOv8n fine-tuned on current UI labels",
+      "status": "planned",
+      "trigger_categories": ["detection_state", "player_detector"],
+      "baseline_commands": [
+        "python scripts/report_model_errors.py --evaluation-results outputs/evaluation/evaluation_results.json --smoothed --output outputs/model_errors_smoothed.md",
+        "python scripts/check_project.py --video-smoke --device cpu"
+      ],
+      "metrics": ["no_player_state_ratio", "player_detected_ratio", "analysis_runtime_seconds"],
+      "pass_criteria": ["Reduce missing player-state rows without breaking 33-column CSV output", "Runtime stays acceptable on local hardware"],
+      "notes": "Keep YOLOv5 as the control until labeled UI detection data is prepared."
+    },
+    {
+      "id": "weapon_classifier_modern_backbone",
+      "area": "weapon_classifier",
+      "candidate": "MobileNetV3/EfficientNet/ConvNeXt small classifier",
+      "status": "planned",
+      "trigger_categories": ["weapon_classifier"],
+      "baseline_commands": [
+        "python scripts/plan_weapon_training.py --strict",
+        "python scripts/train_weapon_classifier.py --dry-run --max-samples-per-class 1 --epochs 1"
+      ],
+      "metrics": ["validation_accuracy", "test_accuracy", "weapon_set_change_rows", "model_size_bytes"],
+      "pass_criteria": ["Improve validation/test accuracy over ResNet18 baseline", "No increase in unstable weapon rows on evaluation CSVs"],
+      "notes": "Current dataset/label/model class counts are aligned; replace only after a measured classifier baseline exists."
+    },
+    {
+      "id": "message_ocr_paddleocr_probe",
+      "area": "message_ocr",
+      "candidate": "PaddleOCR or task-specific OCR model",
+      "status": "planned",
+      "trigger_categories": ["message_ocr"],
+      "baseline_commands": [
+        "python scripts/report_model_errors.py --evaluation-results outputs/evaluation/evaluation_results.json --output outputs/model_errors.md"
+      ],
+      "metrics": ["message_rows", "manual_message_precision", "runtime_seconds"],
+      "pass_criteria": ["Manual precision improves on sampled message frames", "Runtime does not block offline analysis"],
+      "notes": "Message OCR is currently conservative; do not prioritize until message samples matter for downstream features."
+    },
+    {
+      "id": "heatmap_marker_detector_probe",
+      "area": "heatmap",
+      "candidate": "Learned marker detector or improved color-calibrated tracker",
+      "status": "planned",
+      "trigger_categories": ["heatmap_gap", "heatmap_jump_reset"],
+      "baseline_commands": [
+        "python scripts/report_heatmap_comparison.py --output outputs/heatmap_comparison.md --json-output outputs/heatmap_comparison.json --strict",
+        "python scripts/export_heatmap_anomalies.py --output-dir outputs/heatmap_anomalies"
+      ],
+      "metrics": ["gap_ratio", "jump_reset_ratio", "manual_point_recall", "route_images"],
+      "pass_criteria": ["Reduce gap/jump ratios on match_9/10/11", "Improve manual point-label recall once labels are filled"],
+      "notes": "Current color-calibrated MVP is usable, but anomaly samples show where marker identity is unstable."
+    }
+  ]
+}

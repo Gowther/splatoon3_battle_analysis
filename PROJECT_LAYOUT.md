@@ -21,7 +21,8 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/match_intake.py` | Supported | New match registry/evaluation intake planning and safe JSON updates. |
 | `src/model_quality.py` | Supported | Aggregated registry/evaluation/weapon/assets quality overview. |
 | `src/model_error_report.py` | Supported | CSV-level model/OCR risk signal reporting. |
-| `scripts/` | Supported | Health checks, summaries, evaluation, match intake, quality overview, model error reports, registry validation, heatmap reports, annotation exports, weapon training CLIs, and training planning. |
+| `src/model_experiments.py` | Supported | Model replacement experiment planning and prioritization. |
+| `scripts/` | Supported | Health checks, summaries, evaluation, match intake, quality overview, model error reports, experiment planning, registry validation, heatmap reports, annotation exports, weapon training CLIs, and training planning. |
 | `config/` | Supported | Evaluation, registry, and annotation sample configuration. |
 | `models/` | Runtime assets | Canonical `.pt` and `.pth` weights used by supported commands. |
 | `main_weapon_list.txt` | Runtime asset | Weapon classifier output-index to label mapping; must match the classifier output count. |

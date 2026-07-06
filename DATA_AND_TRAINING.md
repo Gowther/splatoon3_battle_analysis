@@ -137,6 +137,23 @@ python scripts/report_heatmap_comparison.py \
 Use the anomaly samples to pick frames for manual point labels before investing
 in coordinate normalization or event joins.
 
+## Model Experiment Planning
+
+After generating quality and error reports, turn candidate model swaps into a
+measured experiment plan:
+
+```bash
+source scripts/use_local_env.sh
+python scripts/plan_model_experiments.py \
+  --model-errors outputs/model_errors.json \
+  --heatmap-comparison outputs/heatmap_comparison.json \
+  --output outputs/model_experiment_plan.md \
+  --json-output outputs/model_experiment_plan.json
+```
+
+The plan keeps YOLO11/YOLOv8, PaddleOCR, newer weapon classifiers, and heatmap
+detector ideas as ranked experiments with baseline commands and pass criteria.
+
 ## Adding New Data
 
 Start with the intake helper so registry and evaluation config stay in sync:

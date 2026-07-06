@@ -336,6 +336,22 @@ def main() -> int:
             ],
             env,
         )
+        run_step(
+            "model experiment plan helper",
+            [
+                PYTHON,
+                "scripts/plan_model_experiments.py",
+                "--model-errors",
+                work_dir / "model_errors.json",
+                "--heatmap-comparison",
+                work_dir / "heatmap_comparison.json",
+                "--output",
+                work_dir / "model_experiment_plan.md",
+                "--json-output",
+                work_dir / "model_experiment_plan.json",
+            ],
+            env,
+        )
 
     if args.evaluation:
         run_step(
