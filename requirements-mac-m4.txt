@@ -1,0 +1,4 @@
+-r yolov5/requirements.txt
+coremltools
+setuptools<81
+urllib3<2

@@ -1,0 +1,293 @@
+from __future__ import annotations
+
+import argparse
+import csv
+import datetime as dt
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Sequence
+
+from src.heatmap.color_calibration import resolve_config
+from src.heatmap.extract_frames import ROOT, load_config, resolve_path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the match_9 heatmap MVP pipeline.")
+    parser.add_argument("--config", default="src/heatmap/config_match9.yaml")
+    parser.add_argument("--device", choices=["auto", "cpu", "mps"], default="auto")
+    parser.add_argument("--warmup-frames", type=int, default=10)
+    parser.add_argument("--contact-limit", type=int, default=24)
+    parser.add_argument("--event-csv", help="Optional external kill/death event CSV.")
+    parser.add_argument("--skip-ui-analysis", action="store_true", help="Reuse an existing UI-state CSV.")
+    parser.add_argument("--only-report", action="store_true", help="Only regenerate report.md from existing outputs.")
+    parser.add_argument("--teams", help="Comma-separated color preset override, for example orange,purple.")
+    parser.add_argument("--disable-auto-colors", action="store_true", help="Use teams from the config without auto color calibration.")
+    return parser.parse_args()
+
+
+def run_command(label: str, command: Sequence[str]) -> None:
+    print(f"\n== {label} ==")
+    print(" ".join(command))
+    subprocess.run(command, cwd=str(ROOT), check=True)
+
+
+def module_command(module: str, args: Sequence[str]) -> List[str]:
+    return [sys.executable, "-m", module, *args]
+
+
+def read_metric_csv(path: Path) -> Dict[str, str]:
+    if not path.exists():
+        return {}
+    with path.open(newline="", encoding="utf-8") as f:
+        return {row["metric"]: row["value"] for row in csv.DictReader(f) if row.get("metric")}
+
+
+def read_rows_csv(path: Path) -> List[Dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open(newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def count_csv_rows(path: Path) -> int:
+    if not path.exists():
+        return 0
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        row_count = sum(1 for _ in reader)
+    return max(0, row_count - 1)
+
+
+def rel(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def artifact_line(label: str, path: Path) -> str:
+    exists = "yes" if path.exists() else "no"
+    return f"- {label}: `{rel(path)}` ({exists})"
+
+
+def metric_lines(title: str, metrics: Dict[str, str], keys: Iterable[str]) -> List[str]:
+    lines = [f"### {title}"]
+    for key in keys:
+        lines.append(f"- {key}: {metrics.get(key, '')}")
+    return lines
+
+
+def write_report(config: Dict, command_hint: Optional[str] = None) -> Path:
+    outputs = config["outputs"]
+    output_dir = resolve_path(config["match"]["output_dir"])
+    report_path = resolve_path(outputs["report_md"])
+    cleaning = read_metric_csv(resolve_path(outputs["cleaning_report_csv"]))
+    render = read_metric_csv(resolve_path(outputs["render_report_csv"]))
+    state_join = read_metric_csv(resolve_path(outputs["state_join_report_csv"]))
+    event_join = read_metric_csv(resolve_path(outputs["event_join_report_csv"]))
+    identity = read_metric_csv(resolve_path(outputs["identity_report_csv"]))
+    color_rows = read_rows_csv(resolve_path(outputs["color_calibration_report_csv"])) if outputs.get("color_calibration_report_csv") else []
+
+    lines: List[str] = [
+        f"# {config['match']['id']} Heatmap Report",
+        "",
+        f"Generated: {dt.datetime.now().isoformat(timespec='seconds')}",
+        "",
+        "## Input",
+        "",
+        f"- match id: `{config['match']['id']}`",
+        f"- video: `{config['match']['input_video']}`",
+        f"- sampled range: `{config['sampling']['start_seconds']}s` to `{config['sampling']['stop_seconds']}s`",
+        f"- sample fps: `{config['sampling']['sample_fps']}`",
+        f"- coordinate space: `{config['map_view']['coordinate_space']}`",
+        f"- output directory: `{rel(output_dir)}`",
+        "",
+        "## Color Calibration",
+        "",
+    ]
+    if color_rows:
+        for row in color_rows:
+            lines.append(
+                f"- order {row.get('order', '')}: `{row.get('team', '')}` "
+                f"(hue `{row.get('detected_hue', '')}`, source `{row.get('source', '')}`)"
+            )
+        resolved_config = config.get("color_calibration", {}).get("resolved_config")
+        if resolved_config:
+            lines.append(f"- resolved config: `{resolved_config}`")
+    else:
+        lines.append("- color calibration report: not available")
+
+    lines.extend(
+        [
+        "",
+        "## One Command",
+        "",
+        "```bash",
+        command_hint
+        or "PYTHONPYCACHEPREFIX=.cache/pycache .venv/bin/python -m src.heatmap.run_pipeline --config src/heatmap/config_match9.yaml",
+        "```",
+        "",
+        "## Core Artifacts",
+        "",
+        ]
+    )
+
+    lines.extend(
+        [
+        artifact_line("valid frames", resolve_path(outputs["valid_frames_csv"])),
+        artifact_line("map mask", resolve_path(outputs["map_mask"])),
+        artifact_line("raw points", resolve_path(outputs["raw_points_csv"])),
+        artifact_line("clean points", resolve_path(outputs["clean_points_csv"])),
+        artifact_line("team tracks", resolve_path(outputs["tracks_csv"])),
+        artifact_line("color calibration", resolve_path(outputs["color_calibration_report_csv"]))
+        if outputs.get("color_calibration_report_csv")
+        else "- color calibration: `(not configured)` (no)",
+        artifact_line("UI state", resolve_path(config["state_join"]["state_csv"])),
+        artifact_line("enriched points", resolve_path(outputs["enriched_points_csv"])),
+        artifact_line("points with events", resolve_path(outputs["points_with_events_csv"])),
+        artifact_line("experimental player tracks", resolve_path(outputs["player_tracks_csv"])),
+        "",
+        "## Visual Artifacts",
+        "",
+        artifact_line("all players heatmap", resolve_path(outputs["rendered_dir"]) / "heatmap_all.png"),
+    ]
+    )
+    for team in config["teams"]:
+        lines.append(artifact_line(f"{team} heatmap", resolve_path(outputs["rendered_dir"]) / f"heatmap_{team}.png"))
+    lines.extend(
+        [
+            artifact_line("combined heatmap", resolve_path(outputs["rendered_dir"]) / "heatmap_combined.png"),
+            artifact_line("team routes", resolve_path(outputs["rendered_dir"]) / "team_routes.png"),
+            artifact_line("player routes directory", resolve_path(outputs["player_routes_dir"])),
+            "",
+            "## Counts",
+        ]
+    )
+
+    lines.extend(
+        [
+        "",
+        f"- valid frame rows: {count_csv_rows(resolve_path(outputs['valid_frames_csv']))}",
+        f"- raw point rows: {count_csv_rows(resolve_path(outputs['raw_points_csv']))}",
+        f"- clean point rows: {count_csv_rows(resolve_path(outputs['clean_points_csv']))}",
+        f"- enriched point rows: {count_csv_rows(resolve_path(outputs['enriched_points_csv']))}",
+        f"- player track rows: {count_csv_rows(resolve_path(outputs['player_tracks_csv']))}",
+        "",
+        ]
+    )
+
+    lines.extend(metric_lines("Cleaning", cleaning, ["raw_points", "clean_points", "rejected_points", "track_status_matched", "track_status_jump_reset"]))
+    lines.append("")
+    lines.extend(metric_lines("State Join", state_join, ["state_rows", "matched_rows", "unmatched_rows", "max_observed_delta_seconds"]))
+    lines.append("")
+    render_metric_keys = ["clean_points", "track_points"]
+    render_metric_keys.extend(f"clean_team_{team}" for team in config["teams"])
+    lines.extend(metric_lines("Rendering", render, render_metric_keys))
+    lines.append("")
+    lines.extend(metric_lines("Events", event_join, ["event_rows", "points_with_nearby_events", "events_with_nearby_points", "segments"]))
+    lines.append("")
+    lines.extend(metric_lines("Experimental Identity", identity, ["player_track_rows", "gap_rows", "route_images", "identity_warning"]))
+    lines.extend(
+        [
+            "",
+            "## Known Limitations",
+            "",
+            "- Marker detection is a lightweight MVP based on color components near map labels; some points can still land on nearby ink patches.",
+            "- `team_routes.png` shows team-level local movement segments, not verified player paths.",
+            "- `player_tracks.csv` contains experimental slot labels such as `<team>_slot_1`; these are not confirmed player identities.",
+            "- Event outputs are empty until a real external kill/death event CSV is supplied.",
+            "- The current coordinate system is source-video pixels, not a normalized stage-map homography.",
+            "",
+            "## Embedded Preview",
+            "",
+            "![combined heatmap](rendered/heatmap_combined.png)",
+            "",
+            "![all players heatmap](rendered/heatmap_all.png)",
+            "",
+            "![team routes](rendered/team_routes.png)",
+            "",
+        ]
+    )
+
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text("\n".join(lines), encoding="utf-8")
+    return report_path
+
+
+def run_pipeline(args: argparse.Namespace, config: Dict, config_path: Path) -> None:
+    config_path = str(resolve_path(config_path))
+    run_command(
+        "extract frames",
+        module_command("src.heatmap.extract_frames", ["--config", config_path, "--contact-limit", str(args.contact_limit)]),
+    )
+    run_command("build map mask", module_command("src.heatmap.build_map_mask", ["--config", config_path]))
+    run_command("detect markers", module_command("src.heatmap.detect_markers", ["--config", config_path]))
+    run_command("clean points", module_command("src.heatmap.clean_points", ["--config", config_path]))
+
+    if not args.skip_ui_analysis:
+        run_command(
+            "run UI state analysis",
+            module_command(
+                "src.run_analysis",
+                [
+                    "--input",
+                    config["match"]["input_video"],
+                    "--output",
+                    config["state_join"]["state_csv"],
+                    "--start-seconds",
+                    str(config["sampling"]["start_seconds"]),
+                    "--stop-seconds",
+                    str(config["sampling"]["stop_seconds"]),
+                    "--sample-fps",
+                    str(config["sampling"]["sample_fps"]),
+                    "--device",
+                    args.device,
+                    "--warmup-frames",
+                    str(args.warmup_frames),
+                ],
+            ),
+        )
+    run_command("join UI state", module_command("src.heatmap.join_state", ["--config", config_path]))
+    run_command("render heatmaps", module_command("src.heatmap.render_heatmaps", ["--config", config_path]))
+
+    event_args = ["--config", config_path]
+    if args.event_csv:
+        event_args.extend(["--events", args.event_csv])
+    run_command("join events", module_command("src.heatmap.join_events", event_args))
+    run_command("infer experimental player tracks", module_command("src.heatmap.infer_player_tracks", ["--config", config_path]))
+
+
+def main() -> int:
+    args = parse_args()
+    config = load_config(resolve_path(args.config))
+    team_override = [item.strip() for item in args.teams.split(",")] if args.teams else None
+    config, resolved_config_path, color_report_path = resolve_config(
+        config,
+        team_override=team_override,
+        disable_auto=args.disable_auto_colors,
+    )
+    command_parts = [
+        "PYTHONPYCACHEPREFIX=.cache/pycache",
+        ".venv/bin/python",
+        "-m",
+        "src.heatmap.run_pipeline",
+        "--config",
+        args.config,
+    ]
+    if args.teams:
+        command_parts.extend(["--teams", args.teams])
+    if args.disable_auto_colors:
+        command_parts.append("--disable-auto-colors")
+    command_hint = " ".join(command_parts)
+    print(f"resolved color config: {resolved_config_path}")
+    print(f"color calibration report: {color_report_path}")
+    if not args.only_report:
+        run_pipeline(args, config, resolved_config_path)
+    report_path = write_report(config, command_hint)
+    print(f"\nreport: {report_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,55 @@
+{
+  "defaults": {
+    "analysis_device": "mps",
+    "sample_fps": 5.0,
+    "count_smoothing": {
+      "max_jump": 20,
+      "neighbor_tolerance": 3,
+      "lookahead": 3
+    }
+  },
+  "analysis_matches": [
+    {
+      "id": "match_1_10_150",
+      "input": "footages/match_1.mp4",
+      "start_seconds": 10.0,
+      "stop_seconds": 150.0,
+      "sample_fps": 5.0,
+      "device": "mps",
+      "expected": {
+        "rows": 701,
+        "eight_player_state_rows": 531,
+        "weapon_rows": 677,
+        "count_rows": 551,
+        "objective_rows": 587,
+        "player_rows": 96,
+        "message_rows": 0
+      },
+      "quality_gates": {
+        "max_smoothed_count_jump_warnings": 0
+      }
+    }
+  ],
+  "heatmap_matches": [
+    {
+      "id": "heatmap_match9",
+      "registry_id": "match_9",
+      "config": "src/heatmap/config_match9.yaml",
+      "report": "outputs/heatmap_match9/report.md",
+      "color_report": "outputs/heatmap_match9/color_calibration_report.csv"
+    },
+    {
+      "id": "heatmap_match10",
+      "registry_id": "match_10",
+      "config": "src/heatmap/config_match10.yaml",
+      "report": "outputs/heatmap_match10/report.md",
+      "color_report": "outputs/heatmap_match10/color_calibration_report.csv"
+    },
+    {
+      "id": "heatmap_match11",
+      "registry_id": "match_11",
+      "report": "outputs/heatmap_match11/report.md",
+      "color_report": "outputs/heatmap_match11/color_calibration_report.csv"
+    }
+  ]
+}

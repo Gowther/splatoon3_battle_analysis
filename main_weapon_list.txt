@@ -42,7 +42,9 @@ E-liter-4K
 Enperry_Splat_Dualies
 Explosher
 Flingza-Roller
-Forge-Splattershot-Pro
+Foil_Flingza_Roller
+Foil_Squeezer
+Forge_Splattershot_Pro
 Glooga-Dualies
 Glooga_Dualies_Deco
 Gold_Dynamo_Roller

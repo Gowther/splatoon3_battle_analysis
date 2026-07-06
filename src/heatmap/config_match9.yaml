@@ -1,0 +1,214 @@
+match:
+  id: match_9
+  input_video: footages/match_9.mp4
+  output_dir: outputs/heatmap_match9
+
+video:
+  width: 1920
+  height: 1080
+  fps: 60
+  duration_seconds: 308.07
+
+sampling:
+  # First useful overhead-map segment seen in manual probes.
+  start_seconds: 20.0
+  stop_seconds: 160.0
+  sample_fps: 1.0
+
+map_view:
+  # First pass uses source-video pixel coordinates. Later goals may add
+  # homography to a standard stage map.
+  coordinate_space: video_pixels
+  reference_time_seconds: 60.0
+  roi:
+    x1: 0
+    y1: 180
+    x2: 1760
+    y2: 980
+  exclude_regions:
+    - name: top_status_bar
+      x1: 0
+      y1: 0
+      x2: 1920
+      y2: 180
+    - name: right_operation_hints
+      x1: 1640
+      y1: 650
+      x2: 1920
+      y2: 980
+    - name: bottom_menu
+      x1: 1450
+      y1: 980
+      x2: 1920
+      y2: 1080
+
+frame_quality:
+  # These thresholds are initial hints only. Goal 2 should verify them with
+  # debug output before relying on them.
+  min_ink_ratio: 0.06
+  max_large_overlay_ratio: 0.35
+  invalid_ranges_seconds:
+    - [0.0, 19.9]
+    - [170.0, 308.1]
+
+teams:
+  yellow:
+    hsv_ranges:
+      - lower: [20, 80, 80]
+        upper: [45, 255, 255]
+  blue:
+    hsv_ranges:
+      - lower: [105, 80, 80]
+        upper: [140, 255, 255]
+
+marker_detection:
+  method: label_guided_color_components
+  min_component_area: 8
+  max_component_area: 900
+  min_component_width: 3
+  max_component_width: 80
+  min_component_height: 3
+  max_component_height: 80
+  min_confidence: 0.45
+  label_proximity_px: 55
+  max_points_per_team_per_frame: 4
+  merge_distance_px: 24
+  debug_frame_limit: 36
+
+label_detection:
+  white_hsv_lower: [0, 0, 145]
+  white_hsv_upper: [179, 105, 255]
+  min_label_area: 10
+  max_label_area: 1600
+  min_label_width: 8
+  max_label_width: 220
+  min_label_height: 5
+  max_label_height: 60
+
+point_cleaning:
+  min_confidence: 0.50
+  max_points_per_team_per_frame: 4
+  merge_distance_px: 18
+  track_slots_per_team: 4
+  max_track_step_px: 420
+  debug_reference_time_seconds: 60.0
+
+rendering:
+  reference_time_seconds: 60.0
+  heat_point_radius_px: 22
+  heat_blur_sigma_px: 34
+  heat_max_alpha: 0.95
+  heat_low_cutoff: 0.10
+  heat_contrast_gamma: 1.65
+  heat_peak_boost: 1.18
+  all_heat_colormap: turbo
+  all_heat_min_alpha: 0.16
+  all_heat_max_alpha: 0.68
+  all_heat_legend: true
+  map_saturation: 0.12
+  map_brightness: 0.70
+  route_line_thickness_px: 2
+  route_point_radius_px: 4
+  route_max_draw_step_px: 120
+  outside_mask_dim: 0.30
+
+state_join:
+  state_csv: outputs/heatmap_match9/ui_state.csv
+  max_time_delta_seconds: 0.51
+  fields:
+    - count_left
+    - count_right
+    - penalty_left
+    - penalty_right
+    - asari_count
+    - hoko_count
+    - area_count
+    - yagura_count
+    - message
+    - player_detected
+    - player_state_1
+    - player_state_2
+    - player_state_3
+    - player_state_4
+    - player_state_5
+    - player_state_6
+    - player_state_7
+    - player_state_8
+    - weapon_1
+    - weapon_2
+    - weapon_3
+    - weapon_4
+    - weapon_5
+    - weapon_6
+    - weapon_7
+    - weapon_8
+
+event_join:
+  event_csv: outputs/heatmap_match9/events_template.csv
+  time_window_seconds: 2.0
+  segment_gap_seconds: 5.0
+
+identity_tracking:
+  method: team_slot_weapon_hint
+  route_max_draw_step_px: 120
+  route_line_thickness_px: 2
+  route_point_radius_px: 4
+  base_identity_confidence: 0.30
+  matched_bonus: 0.12
+  weapon_hint_bonus: 0.08
+  jump_reset_penalty: 0.15
+
+outputs:
+  frames_dir: outputs/heatmap_match9/frames
+  probes_dir: outputs/heatmap_match9/probes
+  debug_markers_dir: outputs/heatmap_match9/debug_markers
+  valid_frames_csv: outputs/heatmap_match9/valid_frames.csv
+  invalid_frames_csv: outputs/heatmap_match9/invalid_frames.csv
+  raw_points_csv: outputs/heatmap_match9/team_points_raw.csv
+  clean_points_csv: outputs/heatmap_match9/team_points.csv
+  tracks_csv: outputs/heatmap_match9/team_tracks.csv
+  rejected_points_csv: outputs/heatmap_match9/team_points_rejected.csv
+  cleaning_report_csv: outputs/heatmap_match9/point_cleaning_report.csv
+  cleaning_debug_dir: outputs/heatmap_match9/cleaning_debug
+  rendered_dir: outputs/heatmap_match9/rendered
+  render_report_csv: outputs/heatmap_match9/render_report.csv
+  enriched_points_csv: outputs/heatmap_match9/team_points_enriched.csv
+  state_join_report_csv: outputs/heatmap_match9/state_join_report.csv
+  event_template_csv: outputs/heatmap_match9/events_template.csv
+  points_with_events_csv: outputs/heatmap_match9/team_points_events.csv
+  events_near_points_csv: outputs/heatmap_match9/events_near_points.csv
+  event_segments_csv: outputs/heatmap_match9/event_segments.csv
+  event_join_report_csv: outputs/heatmap_match9/event_join_report.csv
+  player_tracks_csv: outputs/heatmap_match9/player_tracks.csv
+  player_track_gaps_csv: outputs/heatmap_match9/player_track_gaps.csv
+  player_routes_dir: outputs/heatmap_match9/player_routes
+  identity_report_csv: outputs/heatmap_match9/identity_report.csv
+  map_roi_debug: outputs/heatmap_match9/map_roi_debug.jpg
+  map_mask: outputs/heatmap_match9/map_mask.png
+  report_md: outputs/heatmap_match9/report.md
+
+data_schema:
+  team_points_columns:
+    - match_id
+    - time
+    - frame_index
+    - team
+    - player_id
+    - x
+    - y
+    - confidence
+    - source
+    - clean_stage
+    - frame_path
+  team_tracks_columns:
+    - match_id
+    - time
+    - frame_index
+    - team
+    - track_slot
+    - x
+    - y
+    - confidence
+    - track_status
+    - step_distance
+    - frame_path

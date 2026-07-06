@@ -1,8 +1,28 @@
-.venv
-*.pyc
-*.pycache__
-*.pycache__
-.vscode
-main_training_dataset/
-data/
-footages/
+# Python/runtime cache
+__pycache__/
+*.py[cod]
+/.cache/
+/.venv/
+
+# Local editor/system files
+.DS_Store
+.idea/
+.vscode/
+
+# Local data and generated outputs
+/data/
+/footages/
+/legacy/artifacts/
+/main_training_dataset/
+/outputs/
+/log.log
+/20*.csv
+
+# YOLOv5 dataset split folders
+/yolov5/train/
+/yolov5/test/
+/yolov5/valid/
+
+# Generated model exports; canonical weights stay in models/*.pt and models/*.pth.
+/models/*.torchscript.pt
+/models/*.mlpackage/

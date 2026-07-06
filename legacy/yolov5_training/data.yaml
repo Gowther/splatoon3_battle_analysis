@@ -1,0 +1,5 @@
+train: ../train/images
+val: ../valid/images
+
+nc: 15
+names: ['alive', 'dead', 'fixed_count', 'kill_log', 'lead', 'map_info', 'map_player_dead', 'map_player_position', 'message', 'moving_count', 'object', 'other_player', 'penalty', 'player', 'special']

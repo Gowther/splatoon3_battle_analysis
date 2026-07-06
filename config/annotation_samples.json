@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "defaults": {
+    "frames_per_match": 5,
+    "annotation_distance_threshold_px": 80.0,
+    "anomaly_low_confidence": 0.56,
+    "anomaly_large_step_px": 420.0,
+    "anomaly_max_items_per_match": 24
+  },
+  "heatmap_matches": [
+    "match_9",
+    "match_10",
+    "match_11"
+  ],
+  "notes": [
+    "Generated annotation templates leave manual x/y fields empty.",
+    "Prediction columns are included only as references and must not be treated as ground truth."
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "description": "Local Splatoon 3 battle analysis data registry. Paths are relative to the project root.",
+  "matches": [
+    {
+      "id": "match_1",
+      "video": "footages/match_1.mp4",
+      "purpose": ["analysis_baseline"],
+      "notes": "Primary restored YOLO/OCR/weapon baseline.",
+      "analysis_windows": [
+        {
+          "id": "match_1_10_150",
+          "start_seconds": 10.0,
+          "stop_seconds": 150.0,
+          "sample_fps": 5.0,
+          "device": "mps"
+        }
+      ]
+    },
+    {
+      "id": "match_9",
+      "video": "footages/match_9.mp4",
+      "purpose": ["heatmap_baseline", "color_calibration"],
+      "notes": "Yellow vs blue heatmap baseline.",
+      "heatmap": {
+        "id": "heatmap_match9",
+        "config": "src/heatmap/config_match9.yaml",
+        "output_dir": "outputs/heatmap_match9",
+        "report": "outputs/heatmap_match9/report.md",
+        "color_report": "outputs/heatmap_match9/color_calibration_report.csv",
+        "player_tracks": "outputs/heatmap_match9/player_tracks.csv",
+        "player_track_gaps": "outputs/heatmap_match9/player_track_gaps.csv",
+        "player_routes_dir": "outputs/heatmap_match9/player_routes",
+        "teams": ["yellow", "blue"],
+        "start_seconds": 20.0,
+        "stop_seconds": 160.0,
+        "sample_fps": 1.0,
+        "quality_gates": {
+          "min_track_rows": 1000,
+          "max_gap_ratio": 0.2,
+          "max_jump_reset_ratio": 0.2,
+          "min_route_images": 8
+        }
+      }
+    },
+    {
+      "id": "match_10",
+      "video": "footages/match_10.mp4",
+      "purpose": ["heatmap_baseline", "color_calibration"],
+      "notes": "Orange vs purple heatmap baseline.",
+      "heatmap": {
+        "id": "heatmap_match10",
+        "config": "src/heatmap/config_match10.yaml",
+        "output_dir": "outputs/heatmap_match10",
+        "report": "outputs/heatmap_match10/report.md",
+        "color_report": "outputs/heatmap_match10/color_calibration_report.csv",
+        "player_tracks": "outputs/heatmap_match10/player_tracks.csv",
+        "player_track_gaps": "outputs/heatmap_match10/player_track_gaps.csv",
+        "player_routes_dir": "outputs/heatmap_match10/player_routes",
+        "teams": ["orange", "purple"],
+        "start_seconds": 20.0,
+        "stop_seconds": 320.0,
+        "sample_fps": 1.0,
+        "quality_gates": {
+          "min_track_rows": 2200,
+          "max_gap_ratio": 0.2,
+          "max_jump_reset_ratio": 0.2,
+          "min_route_images": 8
+        }
+      }
+    },
+    {
+      "id": "match_11",
+      "video": "footages/match_11.mp4",
+      "purpose": ["heatmap_baseline", "color_calibration"],
+      "notes": "Pink vs green heatmap baseline. The resolved config is registered because the original run used a temporary config path.",
+      "heatmap": {
+        "id": "heatmap_match11",
+        "config": "outputs/heatmap_match11/resolved_config.yaml",
+        "output_dir": "outputs/heatmap_match11",
+        "report": "outputs/heatmap_match11/report.md",
+        "color_report": "outputs/heatmap_match11/color_calibration_report.csv",
+        "player_tracks": "outputs/heatmap_match11/player_tracks.csv",
+        "player_track_gaps": "outputs/heatmap_match11/player_track_gaps.csv",
+        "player_routes_dir": "outputs/heatmap_match11/player_routes",
+        "teams": ["pink", "green"],
+        "start_seconds": 20.0,
+        "stop_seconds": 330.0,
+        "sample_fps": 1.0,
+        "quality_gates": {
+          "min_track_rows": 2200,
+          "max_gap_ratio": 0.2,
+          "max_jump_reset_ratio": 0.2,
+          "min_route_images": 8
+        }
+      }
+    }
+  ]
+}
