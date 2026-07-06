@@ -127,6 +127,7 @@ Quick baseline:
 
 ```bash
 source scripts/use_local_env.sh
+python -m unittest discover -s tests -q
 python scripts/check_project.py
 python scripts/check_project.py --tooling
 ```

@@ -11,7 +11,7 @@ from typing import Iterable, Sequence
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = ROOT / ".venv" / "bin" / "python"
 
-ACTIVE_COMPILE_TARGETS = ("src", "scripts", "yolov5")
+ACTIVE_COMPILE_TARGETS = ("src", "scripts", "tests", "yolov5")
 
 
 def project_env() -> dict[str, str]:
@@ -82,6 +82,8 @@ def main() -> int:
         raise RuntimeError("No compile targets found.")
 
     run_step("compile python files", [PYTHON, "-m", "compileall", "-q", *targets], env)
+    if (ROOT / "tests").exists():
+        run_step("unit tests", [PYTHON, "-m", "unittest", "discover", "-s", "tests", "-q"], env)
     run_step(
         "load model names",
         [

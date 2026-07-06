@@ -27,6 +27,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `main_weapon_list.txt` | Runtime asset | Weapon classifier output-index to label mapping; must match the classifier output count. |
 | `main_icons/` | Training asset | Active weapon icon source set used by synthetic dataset generation. |
 | `sample/` | Runtime fixture | Small image fixture used by health checks. |
+| `tests/` | Supported | Fast stdlib unit tests for refactored pure logic. |
 | `yolov5/` | Vendor/runtime dependency | Upstream YOLOv5 code used by the current detector and raw smoke check. |
 
 ## Local Data
