@@ -91,10 +91,47 @@ The report uses the same warning logic as `scripts/summarize_csv.py`.
 
 ## Adding New Data
 
-1. Put raw videos under `footages/`.
-2. Run a short smoke analysis with `src.run_analysis`.
-3. Run `scripts/summarize_csv.py` and `scripts/report_csv.py`.
-4. Keep notes about video source, mode, stage, colors, and any visible OCR or
-   weapon mistakes.
-5. Only promote data into training/evaluation once labels or expected outputs
-   are documented.
+Start with the intake helper so registry and evaluation config stay in sync:
+
+```bash
+source scripts/use_local_env.sh
+python scripts/intake_match.py \
+  --match-id match_12 \
+  --video footages/match_12.mp4 \
+  --start-seconds 10 \
+  --stop-seconds 150 \
+  --sample-fps 5 \
+  --device mps \
+  --purpose analysis_candidate \
+  --notes "source/mode/stage/colors notes" \
+  --dry-run \
+  --strict \
+  --report outputs/match_12_intake.md
+```
+
+Review the report, then write the registry/evaluation entries:
+
+```bash
+python scripts/intake_match.py \
+  --match-id match_12 \
+  --video footages/match_12.mp4 \
+  --start-seconds 10 \
+  --stop-seconds 150 \
+  --sample-fps 5 \
+  --device mps \
+  --purpose analysis_candidate \
+  --notes "source/mode/stage/colors notes" \
+  --write \
+  --strict
+```
+
+Then validate and run the new analysis window:
+
+```bash
+python scripts/validate_data_registry.py --strict
+python scripts/evaluate_matches.py --only match_12_10_150 --run-analysis --strict
+```
+
+Keep notes about video source, mode, stage, team colors, and visible OCR or
+weapon mistakes. Only promote data into training/evaluation baselines once
+labels or expected outputs are documented.

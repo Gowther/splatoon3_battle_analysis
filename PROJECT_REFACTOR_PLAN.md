@@ -16,6 +16,7 @@ Use these entrypoints for active development:
 | `python scripts/summarize_csv.py` | CSV sanity summary. |
 | `python scripts/report_csv.py` | Lightweight Markdown report for an analysis CSV. |
 | `python scripts/evaluate_matches.py` | Fixed match evaluation with count smoothing and heatmap quality checks. |
+| `python scripts/intake_match.py` | Register new local match videos and generate registry/evaluation entries. |
 | `python scripts/validate_data_registry.py` | Validate local videos, analysis windows, and heatmap artifacts. |
 | `python scripts/report_heatmap_quality.py` | Generate heatmap trajectory quality reports from the data registry. |
 | `python scripts/export_heatmap_annotation_package.py` | Export frames and CSV templates for manual heatmap point labels. |
@@ -97,6 +98,8 @@ Move shared logic out of large scripts without changing behavior:
   baseline metrics show where the current stack is weak.
 - Current bridge: `scripts/inventory_project.py` records local assets and can
   include hashes for snapshots.
+- Current bridge: `scripts/intake_match.py` creates dry-run reports and safe
+  registry/evaluation updates for new videos such as `match_12` or `match_13`.
 
 ## Phase 6: Productize Analysis Outputs
 
@@ -137,6 +140,7 @@ Inventory and reporting:
 ```bash
 source scripts/use_local_env.sh
 python scripts/inventory_project.py --output outputs/project_inventory.json
+python scripts/intake_match.py --match-id match_12 --video footages/match_12.mp4 --start-seconds 10 --stop-seconds 150 --dry-run --strict
 python scripts/validate_data_registry.py --output outputs/data_registry.json --report outputs/data_registry.md --strict
 python scripts/report_csv.py outputs/match_1.csv
 python scripts/report_heatmap_quality.py --output-dir outputs/heatmap_quality --strict

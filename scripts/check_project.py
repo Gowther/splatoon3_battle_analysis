@@ -270,6 +270,31 @@ def main() -> int:
             ],
             env,
         )
+        run_step(
+            "match intake dry run",
+            [
+                PYTHON,
+                "scripts/intake_match.py",
+                "--match-id",
+                "match_intake_smoke",
+                "--video",
+                args.match_video,
+                "--analysis-id",
+                "match_intake_smoke_10_20",
+                "--start-seconds",
+                "10",
+                "--stop-seconds",
+                "20",
+                "--sample-fps",
+                "5",
+                "--device",
+                args.device,
+                "--dry-run",
+                "--report",
+                work_dir / "match_intake.md",
+            ],
+            env,
+        )
 
     if args.evaluation:
         run_step(
