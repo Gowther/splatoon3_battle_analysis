@@ -89,6 +89,22 @@ python scripts/report_csv.py outputs/match_1.csv
 
 The report uses the same warning logic as `scripts/summarize_csv.py`.
 
+## Quality Overview
+
+Before adding data, retraining, or evaluating model swaps, generate the current
+project quality overview:
+
+```bash
+source scripts/use_local_env.sh
+python scripts/report_model_quality.py \
+  --evaluation-results outputs/evaluation/evaluation_results.json \
+  --output outputs/model_quality.md \
+  --json-output outputs/model_quality.json
+```
+
+If your latest fixed evaluation lives outside `outputs/evaluation/`, pass that
+`evaluation_results.json` path with `--evaluation-results`.
+
 ## Adding New Data
 
 Start with the intake helper so registry and evaluation config stay in sync:

@@ -295,6 +295,18 @@ def main() -> int:
             ],
             env,
         )
+        run_step(
+            "model quality overview helper",
+            [
+                PYTHON,
+                "scripts/report_model_quality.py",
+                "--output",
+                work_dir / "model_quality.md",
+                "--json-output",
+                work_dir / "model_quality.json",
+            ],
+            env,
+        )
 
     if args.evaluation:
         run_step(

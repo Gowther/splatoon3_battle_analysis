@@ -18,7 +18,8 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/heatmap/` | Supported | Heatmap calibration, player marker detection, trajectory quality, annotation, and anomaly helpers. |
 | `src/data_registry.py` | Supported | Data registry path resolution and validation support. |
 | `src/match_intake.py` | Supported | New match registry/evaluation intake planning and safe JSON updates. |
-| `scripts/` | Supported | Health checks, summaries, evaluation, match intake, registry validation, heatmap reports, annotation exports, weapon training CLIs, and training planning. |
+| `src/model_quality.py` | Supported | Aggregated registry/evaluation/weapon/assets quality overview. |
+| `scripts/` | Supported | Health checks, summaries, evaluation, match intake, quality overview, registry validation, heatmap reports, annotation exports, weapon training CLIs, and training planning. |
 | `config/` | Supported | Evaluation, registry, and annotation sample configuration. |
 | `models/` | Runtime assets | Canonical `.pt` and `.pth` weights used by supported commands. |
 | `main_weapon_list.txt` | Runtime asset | Weapon classifier output-index to label mapping; must match the classifier output count. |
