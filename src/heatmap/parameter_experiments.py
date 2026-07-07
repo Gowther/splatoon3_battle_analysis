@@ -70,6 +70,14 @@ def annotation_has_labels(annotation_csv: Path) -> bool:
     return False
 
 
+def annotation_label_summary(annotation_csv: Path) -> dict[str, int]:
+    if not annotation_csv.exists():
+        return {"total_rows": 0, "labeled_rows": 0, "unlabeled_rows": 0}
+    rows = read_csv_rows(annotation_csv)
+    labeled = sum(1 for row in rows if row.get("x", "").strip() and row.get("y", "").strip())
+    return {"total_rows": len(rows), "labeled_rows": labeled, "unlabeled_rows": len(rows) - labeled}
+
+
 def set_nested(config: dict[str, Any], dotted_key: str, value: Any) -> None:
     current: dict[str, Any] = config
     parts = dotted_key.split(".")
@@ -174,6 +182,7 @@ def build_parameter_experiment_plan(
 ) -> dict[str, Any]:
     registry = load_registry(registry_path)
     match_ids = annotation_match_ids(annotation_csv)
+    label_summary = annotation_label_summary(annotation_csv)
     has_labels = annotation_has_labels(annotation_csv)
     candidate_specs = candidates or DEFAULT_CANDIDATES
     runs: list[dict[str, Any]] = []
@@ -243,6 +252,9 @@ def build_parameter_experiment_plan(
         "output_root": display_path(output_root),
         "match_ids": match_ids,
         "has_labels": has_labels,
+        "label_summary": label_summary,
+        "blocking_reason": "" if has_labels else "manual annotation x/y labels are required before recall and mean-error comparison",
+        "recommended_label_gate": {"min_labeled_rows": 30, "min_complete_frame_team_groups": 10},
         "runs": runs,
         "summary": {
             "candidate_count": len(runs),
@@ -267,6 +279,8 @@ def render_markdown(plan: dict[str, Any]) -> str:
         f"- output_root: `{plan.get('output_root', '')}`",
         f"- matches: {', '.join(plan.get('match_ids', []))}",
         f"- has_labels: {plan.get('has_labels')}",
+        f"- blocking_reason: `{plan.get('blocking_reason', '')}`",
+        f"- labeled_rows: {plan.get('label_summary', {}).get('labeled_rows', 0)} / {plan.get('label_summary', {}).get('total_rows', 0)}",
         "",
         "| status | id | recall | mean error | gap ratio | jump reset ratio | configs |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: |",

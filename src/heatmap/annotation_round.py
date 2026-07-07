@@ -90,6 +90,53 @@ def annotation_progress(annotation_csv: Path | None) -> dict[str, Any]:
     }
 
 
+def priority_score(row: dict[str, str]) -> tuple[int, float]:
+    status = row.get("source_track_status", "").strip().lower()
+    confidence_text = row.get("source_confidence", "").strip()
+    try:
+        confidence = float(confidence_text)
+    except ValueError:
+        confidence = 1.0
+    status_rank = 0 if status == "jump_reset" else (1 if status in {"new", "gap"} else 2)
+    return status_rank, confidence
+
+
+def annotation_priority_tasks(annotation_csv: Path | None, *, limit: int = 24) -> list[dict[str, Any]]:
+    if annotation_csv is None:
+        return []
+    path = annotation_csv.expanduser()
+    if not path.exists():
+        return []
+    rows = [
+        row
+        for row in read_csv_rows(path)
+        if is_visible_task(row) and not has_manual_position(row)
+    ]
+    rows.sort(key=priority_score)
+    tasks: list[dict[str, Any]] = []
+    seen_groups: set[tuple[str, str, str]] = set()
+    for row in rows:
+        group = (row.get("match_id", ""), row.get("time", ""), row.get("team", ""))
+        if group in seen_groups:
+            continue
+        seen_groups.add(group)
+        tasks.append(
+            {
+                "match_id": row.get("match_id", ""),
+                "time": row.get("time", ""),
+                "team": row.get("team", ""),
+                "annotation_id": row.get("annotation_id", ""),
+                "track_status": row.get("source_track_status", ""),
+                "confidence": row.get("source_confidence", ""),
+                "frame_path": row.get("frame_path", ""),
+                "preview_path": row.get("preview_path", ""),
+            }
+        )
+        if len(tasks) >= limit:
+            break
+    return tasks
+
+
 def evaluate_progress_gates(
     progress: dict[str, Any],
     *,
@@ -146,6 +193,7 @@ def build_annotation_round_report(
         threshold_px=threshold,
     )
     progress = annotation_progress(template)
+    priority_tasks = annotation_priority_tasks(template)
     progress_checks = evaluate_progress_gates(
         progress,
         min_labeled_rows=min_labeled_rows,
@@ -171,6 +219,7 @@ def build_annotation_round_report(
         "package_dir": display_path(package_dir),
         "annotation_csv": display_path(template),
         "progress": progress,
+        "priority_tasks": priority_tasks,
         "progress_checks": progress_checks,
         "quality_loop": quality_report,
     }
@@ -224,6 +273,25 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"| {match_id} | {item.get('rows', 0)} | {item.get('labeled', 0)} | "
             f"{item.get('skipped', 0)} | {item.get('complete_groups', 0)} |"
         )
+
+    lines.extend(
+        [
+            "",
+            "## Priority Tasks",
+            "",
+            "| match | time | team | status | confidence | annotation |",
+            "| --- | ---: | --- | --- | ---: | --- |",
+        ]
+    )
+    priority_tasks = report.get("priority_tasks", [])
+    if priority_tasks:
+        for task in priority_tasks:
+            lines.append(
+                f"| {task.get('match_id', '')} | {task.get('time', '')} | {task.get('team', '')} | "
+                f"{task.get('track_status', '')} | {task.get('confidence', '')} | `{task.get('annotation_id', '')}` |"
+            )
+    else:
+        lines.append("| none |  |  |  |  |  |")
 
     quality = report.get("quality_loop", {})
     lines.extend(

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+import numpy as np
+
 from src.data_registry import display_path, resolve_project_path
 
 
@@ -71,6 +73,79 @@ def normalize_point(x: float, y: float, source_box: StageBox, *, clamp: bool = F
     return {"stage_x": stage_x, "stage_y": stage_y, "inside_roi": inside}
 
 
+def parse_control_point(value: Mapping[str, Any]) -> dict[str, float]:
+    if "source" in value and "target" in value:
+        source = value["source"]
+        target = value["target"]
+        return {
+            "source_x": float(source[0]),
+            "source_y": float(source[1]),
+            "stage_x": float(target[0]),
+            "stage_y": float(target[1]),
+        }
+    return {
+        "source_x": float(value.get("source_x", value.get("video_x", value.get("x")))),
+        "source_y": float(value.get("source_y", value.get("video_y", value.get("y")))),
+        "stage_x": float(value.get("stage_x", value.get("target_x"))),
+        "stage_y": float(value.get("stage_y", value.get("target_y"))),
+    }
+
+
+def control_points_from_config(config: Mapping[str, Any]) -> list[dict[str, float]]:
+    map_view = config.get("map_view", {}) if isinstance(config, Mapping) else {}
+    stage_coordinates = config.get("stage_coordinates", {}) if isinstance(config, Mapping) else {}
+    candidates: Any = []
+    if isinstance(map_view, Mapping):
+        candidates = map_view.get("control_points") or candidates
+        homography = map_view.get("homography", {})
+        if isinstance(homography, Mapping):
+            candidates = homography.get("control_points") or candidates
+        stage_map = map_view.get("stage_map", {})
+        if isinstance(stage_map, Mapping):
+            candidates = stage_map.get("control_points") or candidates
+    if not candidates and isinstance(stage_coordinates, Mapping):
+        candidates = stage_coordinates.get("control_points") or []
+    if not isinstance(candidates, list):
+        return []
+    points: list[dict[str, float]] = []
+    for item in candidates:
+        if isinstance(item, Mapping):
+            points.append(parse_control_point(item))
+    return points
+
+
+def homography_from_control_points(control_points: list[dict[str, float]]) -> list[list[float]]:
+    if len(control_points) < 4:
+        raise ValueError("at least four stage control points are required")
+    rows: list[list[float]] = []
+    for point in control_points:
+        x = point["source_x"]
+        y = point["source_y"]
+        u = point["stage_x"]
+        v = point["stage_y"]
+        rows.append([-x, -y, -1.0, 0.0, 0.0, 0.0, x * u, y * u, u])
+        rows.append([0.0, 0.0, 0.0, -x, -y, -1.0, x * v, y * v, v])
+    _, _, vh = np.linalg.svd(np.asarray(rows, dtype=float))
+    matrix = vh[-1].reshape(3, 3)
+    if abs(float(matrix[2, 2])) > 1e-12:
+        matrix = matrix / matrix[2, 2]
+    return [[float(value) for value in row] for row in matrix]
+
+
+def normalize_point_homography(x: float, y: float, matrix: list[list[float]], *, clamp: bool = False) -> dict[str, Any]:
+    homography = np.asarray(matrix, dtype=float)
+    target = homography @ np.asarray([float(x), float(y), 1.0], dtype=float)
+    if abs(float(target[2])) <= 1e-12:
+        raise ValueError("homography produced an invalid point")
+    stage_x = float(target[0] / target[2])
+    stage_y = float(target[1] / target[2])
+    inside = 0.0 <= stage_x <= 1.0 and 0.0 <= stage_y <= 1.0
+    if clamp:
+        stage_x = clamp01(stage_x)
+        stage_y = clamp01(stage_y)
+    return {"stage_x": stage_x, "stage_y": stage_y, "inside_roi": inside}
+
+
 def format_coordinate(value: float) -> str:
     return f"{value:.6f}"
 
@@ -81,6 +156,7 @@ def normalize_rows(
     *,
     x_field: str = "x",
     y_field: str = "y",
+    homography_matrix: list[list[float]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     output: list[dict[str, Any]] = []
     summary = {"input_rows": 0, "normalized_rows": 0, "outside_roi_rows": 0, "invalid_rows": 0}
@@ -95,7 +171,11 @@ def normalize_rows(
             summary["invalid_rows"] += 1
             output.append(item)
             continue
-        normalized = normalize_point(x, y, source_box)
+        normalized = (
+            normalize_point_homography(x, y, homography_matrix)
+            if homography_matrix is not None
+            else normalize_point(x, y, source_box)
+        )
         item.update(
             {
                 "stage_x": format_coordinate(float(normalized["stage_x"])),
@@ -116,9 +196,15 @@ def read_csv_rows(path: Path) -> tuple[list[dict[str, str]], list[str]]:
         return list(reader), list(reader.fieldnames or [])
 
 
-def write_normalized_csv(input_csv: Path, output_csv: Path, source_box: StageBox) -> dict[str, int]:
+def write_normalized_csv(
+    input_csv: Path,
+    output_csv: Path,
+    source_box: StageBox,
+    *,
+    homography_matrix: list[list[float]] | None = None,
+) -> dict[str, int]:
     rows, fieldnames = read_csv_rows(input_csv)
-    normalized_rows, summary = normalize_rows(rows, source_box)
+    normalized_rows, summary = normalize_rows(rows, source_box, homography_matrix=homography_matrix)
     output_fields = list(fieldnames)
     for field in ("stage_x", "stage_y", "stage_inside_roi"):
         if field not in output_fields:
@@ -131,9 +217,14 @@ def write_normalized_csv(input_csv: Path, output_csv: Path, source_box: StageBox
     return summary
 
 
-def summarize_points_csv(input_csv: Path, source_box: StageBox) -> dict[str, int]:
+def summarize_points_csv(
+    input_csv: Path,
+    source_box: StageBox,
+    *,
+    homography_matrix: list[list[float]] | None = None,
+) -> dict[str, int]:
     rows, _ = read_csv_rows(input_csv)
-    _, summary = normalize_rows(rows, source_box)
+    _, summary = normalize_rows(rows, source_box, homography_matrix=homography_matrix)
     return summary
 
 
@@ -151,15 +242,29 @@ def build_stage_coordinate_report(
         transform_errors = [str(exc)]
 
     map_view = config.get("map_view", {}) if isinstance(config, Mapping) else {}
+    control_points = control_points_from_config(config)
+    homography_matrix: list[list[float]] | None = None
+    homography_status = "needs_control_points"
+    if len(control_points) >= 4:
+        try:
+            homography_matrix = homography_from_control_points(control_points)
+            homography_status = "ready"
+        except ValueError as exc:
+            transform_errors.append(str(exc))
+            homography_status = "invalid"
+    method = "homography" if homography_matrix is not None else "roi_linear_normalization"
     report: dict[str, Any] = {
         "schema_version": 1,
         "status": "ready" if not transform_errors else "needs_roi",
         "coordinate_space": map_view.get("coordinate_space", "") if isinstance(map_view, Mapping) else "",
         "target_coordinate_space": "stage_normalized_0_1",
         "transform": {
-            "method": "roi_linear_normalization",
+            "method": method,
             "source_roi": source_box.as_dict() if source_box else {},
-            "notes": "Maps current video-pixel map ROI to 0..1 coordinates. Homography can replace this when stage-map control points are available.",
+            "homography_status": homography_status,
+            "control_point_count": len(control_points),
+            "matrix": homography_matrix or [],
+            "notes": "Uses stage-map homography when four or more control points are available; otherwise maps current video-pixel map ROI to 0..1 coordinates.",
         },
         "points": {"status": "not_requested"},
         "errors": transform_errors,
@@ -173,10 +278,10 @@ def build_stage_coordinate_report(
         points_info["status"] = "ready"
         if normalized_csv is not None:
             output_path = Path(normalized_csv).expanduser()
-            summary = write_normalized_csv(input_path, output_path, source_box)
+            summary = write_normalized_csv(input_path, output_path, source_box, homography_matrix=homography_matrix)
             points_info["normalized_output"] = display_path(output_path)
         else:
-            summary = summarize_points_csv(input_path, source_box)
+            summary = summarize_points_csv(input_path, source_box, homography_matrix=homography_matrix)
         points_info["summary"] = summary
     report["points"] = points_info
     return report
@@ -199,6 +304,8 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"- source: `{report.get('coordinate_space', '')}`",
         f"- target: `{report.get('target_coordinate_space', '')}`",
         f"- method: `{transform.get('method', '') if isinstance(transform, Mapping) else ''}`",
+        f"- homography_status: `{transform.get('homography_status', '') if isinstance(transform, Mapping) else ''}`",
+        f"- control_point_count: {transform.get('control_point_count', 0) if isinstance(transform, Mapping) else 0}",
         f"- source_roi: `{json.dumps(source_roi, ensure_ascii=False)}`",
         "",
         "## Point Summary",

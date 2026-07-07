@@ -275,7 +275,14 @@ python scripts/write_experiment_manifest.py \
 python scripts/report_heatmap_productization.py \
   --output outputs/heatmap_productization.md \
   --json-output outputs/heatmap_productization.json
+python scripts/report_model_data_readiness.py \
+  --output outputs/model_data_readiness.md \
+  --json-output outputs/model_data_readiness.json
 ```
+
+Use `report_model_data_readiness.py` as the gate before spending time on new
+model training or model swaps. It should remain `needs_data` until the first
+heatmap labels are filled and parameter experiments can compare recall/error.
 
 ## Adding New Data
 

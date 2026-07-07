@@ -7,6 +7,7 @@ from pathlib import Path
 
 from src.heatmap.parameter_experiments import (
     annotation_has_labels,
+    annotation_label_summary,
     build_parameter_experiment_plan,
     build_variant_config,
     set_nested,
@@ -59,9 +60,13 @@ class HeatmapParameterExperimentTests(unittest.TestCase):
                 write_configs=False,
                 candidates=[{"id": "soft", "overrides": {}}],
             )
+            label_summary = annotation_label_summary(annotation)
 
         self.assertFalse(annotation_has_labels(annotation))
+        self.assertEqual(label_summary["unlabeled_rows"], 1)
+        self.assertEqual(plan["label_summary"]["unlabeled_rows"], 1)
         self.assertEqual(plan["status"], "needs_labels")
+        self.assertIn("manual annotation", plan["blocking_reason"])
         self.assertEqual(plan["runs"][0]["status"], "needs_labels")
 
     def test_trajectory_metrics_aggregate_jump_reset_and_gaps(self) -> None:

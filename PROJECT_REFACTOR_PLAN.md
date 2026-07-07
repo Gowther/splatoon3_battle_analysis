@@ -38,6 +38,7 @@ Use these entrypoints for active development:
 | `python scripts/train_weapon_classifier.py` | Supported weapon classifier training CLI. |
 | `python scripts/generate_weapon_dataset.py` | Optional synthetic weapon dataset generation from icon assets. |
 | `python scripts/benchmark_model_experiments.py` | Build a repeatable benchmark matrix for planned model experiments. |
+| `python scripts/report_model_data_readiness.py` | Check whether labels, validation, runtime, and governance are ready for the next data/model phase. |
 | `python scripts/report_model_benchmark_baseline.py` | Snapshot current validation reports into `outputs/model_benchmarks/`. |
 | `python scripts/run_with_runtime_report.py` | Time a command and write JSON/Markdown runtime reports. |
 | `python scripts/report_runtime_benchmarks.py` | Aggregate runtime reports into a benchmark summary. |
@@ -201,6 +202,7 @@ python scripts/export_heatmap_anomalies.py --output-dir outputs/heatmap_anomalie
 python scripts/report_dataset_governance.py --output outputs/dataset_governance.md --json-output outputs/dataset_governance.json
 python scripts/benchmark_model_experiments.py --experiment-plan outputs/model_experiment_plan.json --output outputs/model_benchmark_plan.md --json-output outputs/model_benchmark_plan.json
 python scripts/report_model_benchmark_baseline.py --output outputs/model_benchmarks/baseline_snapshot.md --json-output outputs/model_benchmarks/baseline_snapshot.json
+python scripts/report_model_data_readiness.py --output outputs/model_data_readiness.md --json-output outputs/model_data_readiness.json
 python scripts/run_with_runtime_report.py --name validation_suite --output outputs/runtime/validation_suite.json -- python scripts/run_validation_suite.py
 python scripts/report_runtime_benchmarks.py --output outputs/runtime/runtime_benchmarks.md --json-output outputs/runtime/runtime_benchmarks.json
 python scripts/write_experiment_manifest.py --experiment-id local_refactor_baseline --artifact baseline=outputs/model_benchmarks/baseline_snapshot.json

@@ -8,7 +8,10 @@ from pathlib import Path
 from src.heatmap.stage_coordinates import (
     StageBox,
     build_stage_coordinate_report,
+    control_points_from_config,
+    homography_from_control_points,
     normalize_point,
+    normalize_point_homography,
     normalize_rows,
     write_normalized_csv,
 )
@@ -62,6 +65,40 @@ class StageCoordinateTests(unittest.TestCase):
 
         self.assertEqual(summary["normalized_rows"], 1)
         self.assertIn("stage_x", output_text)
+
+    def test_homography_control_points_map_center_to_half(self) -> None:
+        points = [
+            {"source": [0, 0], "target": [0, 0]},
+            {"source": [10, 0], "target": [1, 0]},
+            {"source": [10, 10], "target": [1, 1]},
+            {"source": [0, 10], "target": [0, 1]},
+        ]
+        matrix = homography_from_control_points(control_points_from_config({"map_view": {"control_points": points}}))
+
+        point = normalize_point_homography(5, 5, matrix)
+
+        self.assertAlmostEqual(point["stage_x"], 0.5)
+        self.assertAlmostEqual(point["stage_y"], 0.5)
+        self.assertTrue(point["inside_roi"])
+
+    def test_build_report_uses_homography_when_control_points_exist(self) -> None:
+        report = build_stage_coordinate_report(
+            {
+                "map_view": {
+                    "coordinate_space": "video_pixels",
+                    "roi": {"x1": 0, "y1": 0, "x2": 10, "y2": 10},
+                    "control_points": [
+                        {"source": [0, 0], "target": [0, 0]},
+                        {"source": [10, 0], "target": [1, 0]},
+                        {"source": [10, 10], "target": [1, 1]},
+                        {"source": [0, 10], "target": [0, 1]},
+                    ],
+                }
+            }
+        )
+
+        self.assertEqual(report["transform"]["method"], "homography")
+        self.assertEqual(report["transform"]["homography_status"], "ready")
 
 
 if __name__ == "__main__":

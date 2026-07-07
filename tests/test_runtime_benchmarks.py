@@ -20,6 +20,18 @@ class RuntimeBenchmarksTests(unittest.TestCase):
         self.assertEqual(report["summary"]["ready"], 1)
         self.assertEqual(report["summary"]["missing"], 1)
 
+    def test_build_runtime_benchmark_report_flags_slow_reports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            report_path = root / "unit.json"
+            report_path.write_text('{"name":"unit","total_seconds":99.0,"total_display":"99.00s","step_count":1}\n', encoding="utf-8")
+
+            report = build_runtime_benchmark_report([("unit_tests", report_path)])
+
+        self.assertEqual(report["status"], "needs_review")
+        self.assertEqual(report["summary"]["slow"], 1)
+        self.assertEqual(report["reports"][0]["status"], "slow")
+
     def test_parse_runtime_report_arg_supports_label_prefix(self) -> None:
         label, path = parse_runtime_report_arg("unit=/tmp/unit.json")
 
@@ -37,6 +49,7 @@ class RuntimeBenchmarksTests(unittest.TestCase):
         self.assertIn("python -m src.run_analysis", commands)
         self.assertIn("python -m src.heatmap.run_pipeline", commands)
         self.assertIn("--only-report", commands)
+        self.assertTrue(all("expected_max_seconds" in item for item in DEFAULT_BENCHMARKS))
 
 
 if __name__ == "__main__":

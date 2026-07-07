@@ -11,6 +11,199 @@ class CheckStep:
     command: Sequence[object]
 
 
+def tooling_smoke_steps(python: Path, work_dir: Path, match_video: str, device: str) -> list[CheckStep]:
+    annotation_dir = work_dir / "annotation_samples"
+    return [
+        CheckStep("inventory helper", [python, "scripts/inventory_project.py", "--output", work_dir / "project_inventory.json"]),
+        CheckStep("csv report helper", [python, "scripts/report_csv.py", work_dir / "sample.csv", "--output", work_dir / "sample.report.md"]),
+        CheckStep(
+            "heatmap annotation package helper",
+            [
+                python,
+                "scripts/export_heatmap_annotation_package.py",
+                "--output-dir",
+                annotation_dir,
+                "--match-id",
+                "match_9",
+                "--frames-per-match",
+                "1",
+            ],
+        ),
+        CheckStep(
+            "heatmap annotation evaluation helper",
+            [
+                python,
+                "scripts/evaluate_heatmap_annotations.py",
+                annotation_dir / "annotation_template.csv",
+                "--output",
+                annotation_dir / "evaluation.json",
+                "--report",
+                annotation_dir / "evaluation.md",
+            ],
+        ),
+        CheckStep("heatmap config validation helper", [python, "scripts/validate_heatmap_configs.py", "--strict"]),
+        CheckStep(
+            "heatmap anomaly export helper",
+            [
+                python,
+                "scripts/export_heatmap_anomalies.py",
+                "--output-dir",
+                work_dir / "heatmap_anomalies",
+                "--match-id",
+                "match_9",
+                "--max-items-per-match",
+                "4",
+            ],
+        ),
+        CheckStep(
+            "heatmap comparison helper",
+            [
+                python,
+                "scripts/report_heatmap_comparison.py",
+                "--output",
+                work_dir / "heatmap_comparison.md",
+                "--json-output",
+                work_dir / "heatmap_comparison.json",
+                "--strict",
+            ],
+        ),
+        CheckStep("weapon training plan helper", [python, "scripts/plan_weapon_training.py"]),
+        CheckStep("weapon training strict plan helper", [python, "scripts/plan_weapon_training.py", "--strict"]),
+        CheckStep(
+            "weapon classifier training dry run",
+            [
+                python,
+                "scripts/train_weapon_classifier.py",
+                "--dry-run",
+                "--max-samples-per-class",
+                "1",
+                "--epochs",
+                "1",
+                "--batch-size",
+                "8",
+                "--output",
+                work_dir / "weapon_model.pth",
+                "--metrics",
+                work_dir / "weapon_training_metrics.json",
+            ],
+        ),
+        CheckStep(
+            "weapon synthetic dataset dry run",
+            [
+                python,
+                "scripts/generate_weapon_dataset.py",
+                "--dry-run",
+                "--images-per-class",
+                "1",
+                "--output-dir",
+                work_dir / "generated_weapon_dataset",
+            ],
+        ),
+        CheckStep(
+            "match intake dry run",
+            [
+                python,
+                "scripts/intake_match.py",
+                "--match-id",
+                "match_intake_smoke",
+                "--video",
+                match_video,
+                "--analysis-id",
+                "match_intake_smoke_10_20",
+                "--start-seconds",
+                "10",
+                "--stop-seconds",
+                "20",
+                "--sample-fps",
+                "5",
+                "--device",
+                device,
+                "--dry-run",
+                "--report",
+                work_dir / "match_intake.md",
+            ],
+        ),
+        CheckStep(
+            "sample intake dry run",
+            [
+                python,
+                "scripts/intake_samples.py",
+                "--video",
+                match_video,
+                "--match-id",
+                "sample_intake_smoke",
+                "--report",
+                work_dir / "sample_intake.md",
+                "--json-output",
+                work_dir / "sample_intake.json",
+                "--strict",
+            ],
+        ),
+        CheckStep(
+            "model quality overview helper",
+            [
+                python,
+                "scripts/report_model_quality.py",
+                "--output",
+                work_dir / "model_quality.md",
+                "--json-output",
+                work_dir / "model_quality.json",
+            ],
+        ),
+        CheckStep(
+            "project hygiene report helper",
+            [
+                python,
+                "scripts/report_project_hygiene.py",
+                "--output",
+                work_dir / "project_hygiene.md",
+                "--json-output",
+                work_dir / "project_hygiene.json",
+            ],
+        ),
+        CheckStep(
+            "dataset governance report helper",
+            [
+                python,
+                "scripts/report_dataset_governance.py",
+                "--output",
+                work_dir / "dataset_governance.md",
+                "--json-output",
+                work_dir / "dataset_governance.json",
+            ],
+        ),
+        CheckStep(
+            "heatmap quality loop helper",
+            [
+                python,
+                "scripts/report_heatmap_quality_loop.py",
+                "--output",
+                work_dir / "heatmap_quality_loop.md",
+                "--json-output",
+                work_dir / "heatmap_quality_loop.json",
+            ],
+        ),
+    ]
+
+
+def model_error_steps(python: Path, work_dir: Path) -> list[CheckStep]:
+    return [
+        CheckStep(
+            "model error report helper",
+            [
+                python,
+                "scripts/report_model_errors.py",
+                "--csv",
+                work_dir / "sample.csv",
+                "--output",
+                work_dir / "model_errors.md",
+                "--json-output",
+                work_dir / "model_errors.json",
+            ],
+        )
+    ]
+
+
 def heatmap_annotation_steps(python: Path, work_dir: Path) -> list[CheckStep]:
     annotation_csv = work_dir / "heatmap_annotation_round1" / "annotation_template.csv"
     return [
@@ -193,6 +386,27 @@ def experiment_delivery_steps(python: Path, root: Path, work_dir: Path) -> list[
                 work_dir / "heatmap_productization.md",
                 "--json-output",
                 work_dir / "heatmap_productization.json",
+            ],
+        ),
+        CheckStep(
+            "model data readiness helper",
+            [
+                python,
+                "scripts/report_model_data_readiness.py",
+                "--annotation-round",
+                work_dir / "heatmap_annotation_round1.json",
+                "--parameter-experiments",
+                work_dir / "heatmap_parameter_experiments.json",
+                "--runtime-benchmarks",
+                work_dir / "runtime_benchmarks.json",
+                "--dataset-governance",
+                work_dir / "dataset_governance.json",
+                "--model-experiment-plan",
+                work_dir / "model_experiment_plan.json",
+                "--output",
+                work_dir / "model_data_readiness.md",
+                "--json-output",
+                work_dir / "model_data_readiness.json",
             ],
         ),
         CheckStep(
