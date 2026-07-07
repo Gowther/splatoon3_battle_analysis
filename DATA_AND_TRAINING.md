@@ -3,6 +3,9 @@
 This project should grow by adding reproducible data and evaluation paths
 before swapping models.
 
+For the practical asset placement, retraining, incremental-data, structure, and
+code-quality guide, see `TRAINING_AND_DATA_GUIDE.md`.
+
 ## Asset Inventory
 
 Use the inventory script before and after adding new local assets:
