@@ -23,13 +23,27 @@ Use these entrypoints for active development:
 | `python scripts/validate_data_registry.py` | Validate local videos, analysis windows, and heatmap artifacts. |
 | `python scripts/report_heatmap_quality.py` | Generate heatmap trajectory quality reports from the data registry. |
 | `python scripts/report_heatmap_comparison.py` | Compare registered heatmap matches and trajectory anomalies. |
+| `python scripts/report_heatmap_quality_loop.py` | Export/evaluate heatmap annotation loops for manual point-label quality. |
+| `python scripts/prepare_heatmap_annotation_round.py` | Prepare named heatmap annotation rounds and summarize label progress. |
+| `python scripts/build_heatmap_annotation_ui.py` | Build a static browser helper for filling manual heatmap point labels. |
+| `python scripts/suggest_heatmap_tuning.py` | Suggest heatmap tracker tuning actions from manual labels and anomaly reports. |
+| `python scripts/run_heatmap_parameter_experiments.py` | Generate candidate heatmap parameter configs and experiment commands. |
+| `python scripts/report_stage_coordinates.py` | Report and optionally export normalized heatmap stage coordinates. |
 | `python scripts/export_heatmap_annotation_package.py` | Export frames and CSV templates for manual heatmap point labels. |
 | `python scripts/evaluate_heatmap_annotations.py` | Evaluate heatmap predictions against manual player point labels. |
 | `python scripts/export_heatmap_anomalies.py` | Export low-quality heatmap frames for manual review. |
 | `python scripts/inventory_project.py` | Local model/footage/dataset inventory. |
+| `python scripts/report_dataset_governance.py` | Check weapon dataset, labels, and registry metadata governance. |
 | `python scripts/plan_weapon_training.py` | Weapon dataset and training-plan inspection. |
 | `python scripts/train_weapon_classifier.py` | Supported weapon classifier training CLI. |
 | `python scripts/generate_weapon_dataset.py` | Optional synthetic weapon dataset generation from icon assets. |
+| `python scripts/benchmark_model_experiments.py` | Build a repeatable benchmark matrix for planned model experiments. |
+| `python scripts/report_model_benchmark_baseline.py` | Snapshot current validation reports into `outputs/model_benchmarks/`. |
+| `python scripts/run_with_runtime_report.py` | Time a command and write JSON/Markdown runtime reports. |
+| `python scripts/report_runtime_benchmarks.py` | Aggregate runtime reports into a benchmark summary. |
+| `python scripts/write_experiment_manifest.py` | Write source/artifact hashes and verification into an experiment manifest. |
+| `python scripts/report_heatmap_productization.py` | Report heatmap productization readiness and milestones. |
+| `python scripts/report_change_package.py` | Summarize the current worktree into review/commit batches. |
 
 Files outside this list are not routine development entrypoints. Historical
 scripts, old date-stamped root scripts, notebooks, realtime experiments, old
@@ -124,6 +138,18 @@ Move shared logic out of large scripts without changing behavior:
 - Current bridge: `scripts/report_heatmap_comparison.py` compares registered
   heatmap matches and ranks trajectory anomalies before coordinate
   normalization/event joins are available.
+- Current bridge: `scripts/report_heatmap_quality_loop.py` turns heatmap
+  predictions into manual annotation packages and evaluates filled labels with
+  recall/error gates.
+- Current bridge: `scripts/prepare_heatmap_annotation_round.py` creates named
+  annotation batches such as `first_manual_loop`; `scripts/suggest_heatmap_tuning.py`
+  converts filled labels into concrete tracker-tuning suggestions.
+- Current bridge: `src.heatmap.run_pipeline --clean-output` and
+  `outputs/<heatmap>/run_manifest.json` keep generated heatmap artifacts
+  deterministic.
+- Current bridge: `scripts/report_stage_coordinates.py` maps heatmap video-pixel
+  ROI coordinates into `stage_x/stage_y` 0-1 coordinates, ready for later
+  homography once stage-map control points are labeled.
 
 ## Local Check Commands
 
@@ -163,9 +189,23 @@ python scripts/validate_data_registry.py --output outputs/data_registry.json --r
 python scripts/report_csv.py outputs/match_1.csv
 python scripts/report_heatmap_quality.py --output-dir outputs/heatmap_quality --strict
 python scripts/report_heatmap_comparison.py --output outputs/heatmap_comparison.md --json-output outputs/heatmap_comparison.json --strict
+python scripts/report_heatmap_quality_loop.py --export-package --package-dir outputs/heatmap_quality_loop
+python scripts/prepare_heatmap_annotation_round.py --round-id first_manual_loop --package-dir outputs/heatmap_annotation_round1
+python scripts/build_heatmap_annotation_ui.py --annotation-csv outputs/heatmap_annotation_round1/annotation_template.csv --output outputs/heatmap_annotation_round1/annotation_ui.html
+python scripts/suggest_heatmap_tuning.py --annotation-csv outputs/heatmap_annotation_round1/annotation_template.csv --heatmap-comparison outputs/heatmap_comparison.json
+python scripts/run_heatmap_parameter_experiments.py --annotation-csv outputs/heatmap_annotation_round1/annotation_template.csv --write-configs
+python scripts/report_stage_coordinates.py --config src/heatmap/config_match9.yaml --normalized-output outputs/heatmap_match9/player_tracks_stage.csv
 python scripts/export_heatmap_annotation_package.py --output-dir outputs/annotation_samples
 python scripts/evaluate_heatmap_annotations.py outputs/annotation_samples/annotation_template.csv
 python scripts/export_heatmap_anomalies.py --output-dir outputs/heatmap_anomalies
+python scripts/report_dataset_governance.py --output outputs/dataset_governance.md --json-output outputs/dataset_governance.json
+python scripts/benchmark_model_experiments.py --experiment-plan outputs/model_experiment_plan.json --output outputs/model_benchmark_plan.md --json-output outputs/model_benchmark_plan.json
+python scripts/report_model_benchmark_baseline.py --output outputs/model_benchmarks/baseline_snapshot.md --json-output outputs/model_benchmarks/baseline_snapshot.json
+python scripts/run_with_runtime_report.py --name validation_suite --output outputs/runtime/validation_suite.json -- python scripts/run_validation_suite.py
+python scripts/report_runtime_benchmarks.py --output outputs/runtime/runtime_benchmarks.md --json-output outputs/runtime/runtime_benchmarks.json
+python scripts/write_experiment_manifest.py --experiment-id local_refactor_baseline --artifact baseline=outputs/model_benchmarks/baseline_snapshot.json
+python scripts/report_heatmap_productization.py --output outputs/heatmap_productization.md --json-output outputs/heatmap_productization.json
+python scripts/report_change_package.py --verification "python -m unittest discover -s tests -q"
 python scripts/plan_weapon_training.py
 python scripts/train_weapon_classifier.py --dry-run --max-samples-per-class 1 --epochs 1
 python scripts/generate_weapon_dataset.py --dry-run --images-per-class 1

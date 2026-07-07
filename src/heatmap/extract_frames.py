@@ -8,7 +8,8 @@ from typing import Dict, Iterable, List, Sequence, Tuple, Union
 
 import cv2
 import numpy as np
-import yaml
+
+from src.heatmap.config_loader import load_config
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,11 +26,6 @@ def parse_args() -> argparse.Namespace:
 def resolve_path(path: Union[str, Path]) -> Path:
     output = Path(path).expanduser()
     return output if output.is_absolute() else ROOT / output
-
-
-def load_config(path: Path) -> Dict:
-    with path.open(encoding="utf-8") as f:
-        return yaml.safe_load(f)
 
 
 def seconds_range(start: float, stop: float, sample_fps: float) -> Iterable[float]:

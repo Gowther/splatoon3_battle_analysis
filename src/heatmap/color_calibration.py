@@ -37,6 +37,10 @@ COLOR_PRESETS: Dict[str, Dict[str, object]] = {
         "hue": 67,
         "hsv_ranges": [{"lower": [50, 80, 80], "upper": [85, 255, 255]}],
     },
+    "mint": {
+        "hue": 80,
+        "hsv_ranges": [{"lower": [70, 80, 80], "upper": [92, 255, 255]}],
+    },
     "cyan": {
         "hue": 95,
         "hsv_ranges": [{"lower": [85, 80, 80], "upper": [105, 255, 255]}],
@@ -373,6 +377,13 @@ def report_paths(config: Dict, output_path: Optional[Path]) -> Tuple[Path, Path]
     return resolved_config_path, report_path
 
 
+def display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
 def write_report(path: Path, rows: Sequence[Dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["order", "team", "detected_hue", "histogram_count", "source", "hsv_ranges"]
@@ -431,8 +442,12 @@ def resolve_config(
             ordered_rows.append(row)
         rows = ordered_rows
 
-    resolved["color_calibration"] = {**calib, "resolved_config": str(resolved_config_path.relative_to(ROOT)), "report_csv": str(report_path.relative_to(ROOT))}
-    resolved["outputs"]["color_calibration_report_csv"] = str(report_path.relative_to(ROOT))
+    resolved["color_calibration"] = {
+        **calib,
+        "resolved_config": display_path(resolved_config_path),
+        "report_csv": display_path(report_path),
+    }
+    resolved["outputs"]["color_calibration_report_csv"] = display_path(report_path)
     resolved_config_path.parent.mkdir(parents=True, exist_ok=True)
     with resolved_config_path.open("w", encoding="utf-8") as f:
         yaml.safe_dump(resolved, f, allow_unicode=True, sort_keys=False)

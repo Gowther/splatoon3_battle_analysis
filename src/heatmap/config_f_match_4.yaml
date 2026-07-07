@@ -1,0 +1,16 @@
+base_config: src/heatmap/config_overhead_default.yaml
+
+match:
+  id: f_match_4
+  input_video: footages/f_match_4.mp4
+
+video:
+  duration_seconds: 269.933
+
+sampling:
+  stop_seconds: 249.0
+
+frame_quality:
+  invalid_ranges_seconds:
+    - [0.0, 19.9]
+    - [259.0, 269.9]

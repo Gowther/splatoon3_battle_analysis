@@ -17,11 +17,23 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/protocol.py` | Supported | 33-column CSV and GameState protocol contract. |
 | `src/heatmap/` | Supported | Heatmap calibration, player marker detection, trajectory quality, annotation, and anomaly helpers. |
 | `src/heatmap/comparison_report.py` | Supported | Cross-match heatmap quality and anomaly comparison reporting. |
+| `src/heatmap/annotation_ui.py` | Supported | Static HTML helper generation for manual heatmap point labels. |
+| `src/heatmap/parameter_experiments.py` | Supported | Heatmap tracker parameter experiment planning and candidate config generation. |
+| `src/heatmap/productization.py` | Supported | Productization readiness and milestone reporting for heatmap outputs. |
+| `src/heatmap/stage_coordinates.py` | Supported | ROI-to-stage normalized coordinate helpers for heatmap points and tracks. |
 | `src/data_registry.py` | Supported | Data registry path resolution and validation support. |
 | `src/match_intake.py` | Supported | New match registry/evaluation intake planning and safe JSON updates. |
 | `src/model_quality.py` | Supported | Aggregated registry/evaluation/weapon/assets quality overview. |
 | `src/model_error_report.py` | Supported | CSV-level model/OCR risk signal reporting. |
 | `src/model_experiments.py` | Supported | Model replacement experiment planning and prioritization. |
+| `src/model_benchmark_baseline.py` | Supported | Snapshot current evaluation/error/heatmap reports as a benchmark baseline. |
+| `src/dataset_governance.py` | Supported | Dataset, label, and registry metadata governance reporting. |
+| `src/project_hygiene.py` | Supported | Root-layout, output, cache, and legacy-boundary hygiene reporting. |
+| `src/runtime_report.py` | Supported | Small JSON/Markdown runtime report helpers for timed commands. |
+| `src/runtime_benchmarks.py` | Supported | Runtime report aggregation for benchmark baselines. |
+| `src/project_check_registry.py` | Supported | Composable `check_project.py --tooling` helper step registry. |
+| `src/change_package.py` | Supported | Worktree grouping and verification summary for review/commit planning. |
+| `src/experiment_manifest.py` | Supported | Reproducibility manifests for data/model experiments. |
 | `scripts/` | Supported | Health checks, summaries, evaluation, match intake, quality overview, model error reports, experiment planning, registry validation, heatmap reports, annotation exports, weapon training CLIs, and training planning. |
 | `config/` | Supported | Evaluation, registry, and annotation sample configuration. |
 | `models/` | Runtime assets | Canonical `.pt` and `.pth` weights used by supported commands. |
@@ -41,6 +53,13 @@ These paths are expected to be local-machine assets and are ignored by git:
 - `outputs/`: generated reports and experiment outputs.
 - `.cache/`: runtime caches for PyTorch, pip, matplotlib, and pycache.
 
+Run this when checking whether new development left unexpected root files or
+generated artifacts outside `outputs/`:
+
+```bash
+.venv/bin/python scripts/report_project_hygiene.py --output outputs/project_hygiene.md --json-output outputs/project_hygiene.json
+```
+
 ## Legacy References
 
 Legacy material is preserved under `legacy/` and `notebooks/legacy/`. It is not
@@ -48,6 +67,11 @@ compiled or exercised by `scripts/check_project.py` unless a file is promoted
 back into a supported CLI/test.
 
 See `legacy/README.md` and `notebooks/README.md` before using archived files.
+
+The tracked `.models/` directory is treated as a historical export archive.
+Supported runtime commands load canonical weights from `models/`; do not add new
+runtime dependencies on `.models/` without first promoting the asset and updating
+the validation suite.
 
 ## Development Rule
 

@@ -10,7 +10,7 @@ import cv2
 
 from src.heatmap.detect_markers import load_mask
 from src.heatmap.extract_frames import load_config, resolve_path
-from src.heatmap.render_heatmaps import TEAM_COLORS, prepare_render_base, read_video_frame, save_image
+from src.heatmap.render_heatmaps import prepare_render_base, read_video_frame, save_image, team_display_color
 
 
 Row = Dict[str, str]
@@ -154,11 +154,23 @@ def group_by_player(rows: Sequence[Dict[str, object]]) -> DefaultDict[str, List[
     return grouped
 
 
+def clean_route_images(output_dir: Path) -> int:
+    if not output_dir.exists():
+        return 0
+    removed = 0
+    for path in output_dir.glob("*.png"):
+        if path.is_file():
+            path.unlink()
+            removed += 1
+    return removed
+
+
 def render_player_routes(config: Dict, player_rows: Sequence[Dict[str, object]]) -> List[Path]:
     mask = load_mask(config)
     base = prepare_render_base(read_video_frame(config), mask, config)
     output_dir = resolve_path(config["outputs"]["player_routes_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
+    clean_route_images(output_dir)
     max_draw_step = float(config["identity_tracking"]["route_max_draw_step_px"])
     thickness = int(config["identity_tracking"]["route_line_thickness_px"])
     point_radius = int(config["identity_tracking"]["route_point_radius_px"])
@@ -170,7 +182,7 @@ def render_player_routes(config: Dict, player_rows: Sequence[Dict[str, object]])
         for row in rows:
             x = int(round(float(row["x"])))
             y = int(round(float(row["y"])))
-            color = TEAM_COLORS.get(str(row["team"]), (255, 255, 255))
+            color = team_display_color(str(row["team"]), config)
             status = str(row.get("track_status", ""))
             step_distance = str(row.get("step_distance", ""))
             if previous is not None and status == "matched" and step_distance and float(step_distance) <= max_draw_step:

@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from src.heatmap.color_calibration import resolve_config
 from src.heatmap.extract_frames import ROOT, load_config, resolve_path
@@ -21,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--event-csv", help="Optional external kill/death event CSV.")
     parser.add_argument("--skip-ui-analysis", action="store_true", help="Reuse an existing UI-state CSV.")
     parser.add_argument("--only-report", action="store_true", help="Only regenerate report.md from existing outputs.")
+    parser.add_argument("--clean-output", action="store_true", help="Remove generated files under this match output_dir before running.")
     parser.add_argument("--teams", help="Comma-separated color preset override, for example orange,purple.")
     parser.add_argument("--disable-auto-colors", action="store_true", help="Use teams from the config without auto color calibration.")
     return parser.parse_args()
@@ -76,6 +79,116 @@ def metric_lines(title: str, metrics: Dict[str, str], keys: Iterable[str]) -> Li
     for key in keys:
         lines.append(f"- {key}: {metrics.get(key, '')}")
     return lines
+
+
+def inside_directory(path: Path, directory: Path) -> bool:
+    try:
+        path.resolve().relative_to(directory.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def configured_output_paths(config: Dict) -> List[Path]:
+    output_dir = resolve_path(config["match"]["output_dir"])
+    paths: set[Path] = {
+        output_dir / "resolved_config.yaml",
+        output_dir / "color_calibration_report.csv",
+        output_dir / "run_manifest.json",
+    }
+    for value in config.get("outputs", {}).values():
+        if isinstance(value, str):
+            paths.add(resolve_path(value))
+    state_csv = config.get("state_join", {}).get("state_csv")
+    if isinstance(state_csv, str):
+        paths.add(resolve_path(state_csv))
+    event_csv = config.get("event_join", {}).get("event_csv")
+    if isinstance(event_csv, str):
+        paths.add(resolve_path(event_csv))
+    return sorted(
+        (path for path in paths if path != output_dir and inside_directory(path, output_dir)),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+
+
+def clean_generated_outputs(config: Dict) -> List[str]:
+    removed: List[str] = []
+    for path in configured_output_paths(config):
+        if not path.exists():
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        removed.append(rel(path))
+    return removed
+
+
+def artifact_status(config: Dict, extra_paths: Dict[str, Path]) -> List[Dict[str, object]]:
+    artifacts: List[Dict[str, object]] = []
+    output_values = {
+        **{f"outputs.{key}": value for key, value in config.get("outputs", {}).items() if isinstance(value, str)},
+        "state_join.state_csv": config.get("state_join", {}).get("state_csv", ""),
+    }
+    for label, value in output_values.items():
+        if not value:
+            continue
+        path = resolve_path(value)
+        artifacts.append({"label": label, "path": rel(path), "exists": path.exists(), "kind": "dir" if path.is_dir() else "file"})
+    for label, path in extra_paths.items():
+        artifacts.append({"label": label, "path": rel(path), "exists": path.exists(), "kind": "dir" if path.is_dir() else "file"})
+    return artifacts
+
+
+def write_run_manifest(
+    config: Dict,
+    args: argparse.Namespace,
+    *,
+    source_config_path: Path,
+    resolved_config_path: Path,
+    color_report_path: Path,
+    report_path: Path,
+    command_hint: str,
+    cleaned_paths: List[str],
+) -> Path:
+    output_dir = resolve_path(config["match"]["output_dir"])
+    manifest_path = output_dir / "run_manifest.json"
+    manifest = {
+        "schema_version": 1,
+        "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "match_id": config["match"]["id"],
+        "input_video": config["match"]["input_video"],
+        "source_config": rel(resolve_path(source_config_path)),
+        "resolved_config": rel(resolved_config_path),
+        "color_report": rel(color_report_path),
+        "report": rel(report_path),
+        "command": command_hint,
+        "options": {
+            "device": args.device,
+            "warmup_frames": args.warmup_frames,
+            "contact_limit": args.contact_limit,
+            "skip_ui_analysis": args.skip_ui_analysis,
+            "only_report": args.only_report,
+            "clean_output": args.clean_output,
+            "event_csv": args.event_csv or "",
+            "teams": args.teams or "",
+            "disable_auto_colors": args.disable_auto_colors,
+        },
+        "cleaned_paths": cleaned_paths,
+        "artifacts": artifact_status(
+            config,
+            {
+                "resolved_config": resolved_config_path,
+                "color_report": color_report_path,
+                "report": report_path,
+                "run_manifest": manifest_path,
+            },
+        ),
+    }
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return manifest_path
 
 
 def write_report(config: Dict, command_hint: Optional[str] = None) -> Path:
@@ -261,6 +374,9 @@ def run_pipeline(args: argparse.Namespace, config: Dict, config_path: Path) -> N
 def main() -> int:
     args = parse_args()
     config = load_config(resolve_path(args.config))
+    cleaned_paths: List[str] = []
+    if args.clean_output and not args.only_report:
+        cleaned_paths = clean_generated_outputs(config)
     team_override = [item.strip() for item in args.teams.split(",")] if args.teams else None
     config, resolved_config_path, color_report_path = resolve_config(
         config,
@@ -279,13 +395,30 @@ def main() -> int:
         command_parts.extend(["--teams", args.teams])
     if args.disable_auto_colors:
         command_parts.append("--disable-auto-colors")
+    if args.clean_output:
+        command_parts.append("--clean-output")
     command_hint = " ".join(command_parts)
     print(f"resolved color config: {resolved_config_path}")
     print(f"color calibration report: {color_report_path}")
+    if cleaned_paths:
+        print("cleaned generated outputs:")
+        for path in cleaned_paths:
+            print(f"- {path}")
     if not args.only_report:
         run_pipeline(args, config, resolved_config_path)
     report_path = write_report(config, command_hint)
+    manifest_path = write_run_manifest(
+        config,
+        args,
+        source_config_path=Path(args.config),
+        resolved_config_path=resolved_config_path,
+        color_report_path=color_report_path,
+        report_path=report_path,
+        command_hint=command_hint,
+        cleaned_paths=cleaned_paths,
+    )
     print(f"\nreport: {report_path}")
+    print(f"manifest: {manifest_path}")
     return 0
 
 

@@ -97,13 +97,13 @@ rendering:
   reference_time_seconds: 60.0
   heat_point_radius_px: 22
   heat_blur_sigma_px: 34
-  heat_max_alpha: 0.95
+  heat_max_alpha: 0.58
   heat_low_cutoff: 0.10
-  heat_contrast_gamma: 1.65
-  heat_peak_boost: 1.18
+  heat_contrast_gamma: 1.60
+  heat_peak_boost: 1.00
   all_heat_colormap: turbo
-  all_heat_min_alpha: 0.16
-  all_heat_max_alpha: 0.68
+  all_heat_min_alpha: 0.12
+  all_heat_max_alpha: 0.52
   all_heat_legend: true
   map_saturation: 0.12
   map_brightness: 0.70
@@ -111,6 +111,7 @@ rendering:
   route_point_radius_px: 4
   route_max_draw_step_px: 120
   outside_mask_dim: 0.30
+  heat_scale_percentile: 99.85
 
 state_join:
   state_csv: outputs/heatmap_match9/ui_state.csv

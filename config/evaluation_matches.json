@@ -36,6 +36,86 @@
       "stop_seconds": 40.0,
       "sample_fps": 5.0,
       "device": "mps"
+    },
+    {
+      "id": "n_match_1_20_40",
+      "input": "footages/n_match_1.mp4",
+      "start_seconds": 20.0,
+      "stop_seconds": 40.0,
+      "sample_fps": 5.0,
+      "device": "mps"
+    },
+    {
+      "id": "n_match_2_20_40",
+      "input": "footages/n_match_2.mp4",
+      "start_seconds": 20.0,
+      "stop_seconds": 40.0,
+      "sample_fps": 5.0,
+      "device": "mps"
+    },
+    {
+      "id": "n_match_3_20_40",
+      "input": "footages/n_match_3.mp4",
+      "start_seconds": 20.0,
+      "stop_seconds": 40.0,
+      "sample_fps": 5.0,
+      "device": "mps"
+    },
+    {
+      "id": "n_match_4_20_40",
+      "input": "footages/n_match_4.mp4",
+      "start_seconds": 20.0,
+      "stop_seconds": 40.0,
+      "sample_fps": 5.0,
+      "device": "mps"
+    },
+    {
+      "id": "n_match_5_20_40",
+      "input": "footages/n_match_5.mp4",
+      "start_seconds": 20.0,
+      "stop_seconds": 40.0,
+      "sample_fps": 5.0,
+      "device": "mps"
+    },
+    {
+      "id": "n_match_1_best_100_130",
+      "input": "footages/n_match_1.mp4",
+      "start_seconds": 100.0,
+      "stop_seconds": 130.0,
+      "sample_fps": 5.0,
+      "device": "mps"
+    },
+    {
+      "id": "n_match_2_best_100_130",
+      "input": "footages/n_match_2.mp4",
+      "start_seconds": 100.0,
+      "stop_seconds": 130.0,
+      "sample_fps": 5.0,
+      "device": "mps"
+    },
+    {
+      "id": "n_match_3_best_220_250",
+      "input": "footages/n_match_3.mp4",
+      "start_seconds": 220.0,
+      "stop_seconds": 250.0,
+      "sample_fps": 5.0,
+      "device": "mps"
+    },
+    {
+      "id": "n_match_4_best_100_130",
+      "input": "footages/n_match_4.mp4",
+      "start_seconds": 100.0,
+      "stop_seconds": 130.0,
+      "sample_fps": 5.0,
+      "device": "mps"
+    },
+    {
+      "id": "n_match_5_best_180_210",
+      "input": "footages/n_match_5.mp4",
+      "start_seconds": 180.0,
+      "stop_seconds": 210.0,
+      "sample_fps": 5.0,
+      "device": "mps"
     }
   ],
   "heatmap_matches": [
@@ -58,6 +138,41 @@
       "registry_id": "match_11",
       "report": "outputs/heatmap_match11/report.md",
       "color_report": "outputs/heatmap_match11/color_calibration_report.csv"
+    },
+    {
+      "id": "heatmap_f_match_1",
+      "registry_id": "f_match_1",
+      "config": "src/heatmap/config_f_match_1.yaml",
+      "report": "outputs/heatmap_f_match_1/report.md",
+      "color_report": "outputs/heatmap_f_match_1/color_calibration_report.csv"
+    },
+    {
+      "id": "heatmap_f_match_2",
+      "registry_id": "f_match_2",
+      "config": "src/heatmap/config_f_match_2.yaml",
+      "report": "outputs/heatmap_f_match_2/report.md",
+      "color_report": "outputs/heatmap_f_match_2/color_calibration_report.csv"
+    },
+    {
+      "id": "heatmap_f_match_3",
+      "registry_id": "f_match_3",
+      "config": "src/heatmap/config_f_match_3.yaml",
+      "report": "outputs/heatmap_f_match_3/report.md",
+      "color_report": "outputs/heatmap_f_match_3/color_calibration_report.csv"
+    },
+    {
+      "id": "heatmap_f_match_4",
+      "registry_id": "f_match_4",
+      "config": "src/heatmap/config_f_match_4.yaml",
+      "report": "outputs/heatmap_f_match_4/report.md",
+      "color_report": "outputs/heatmap_f_match_4/color_calibration_report.csv"
+    },
+    {
+      "id": "heatmap_f_match_5",
+      "registry_id": "f_match_5",
+      "config": "src/heatmap/config_f_match_5.yaml",
+      "report": "outputs/heatmap_f_match_5/report.md",
+      "color_report": "outputs/heatmap_f_match_5/color_calibration_report.csv"
     }
   ]
 }

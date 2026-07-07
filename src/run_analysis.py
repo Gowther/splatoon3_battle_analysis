@@ -5,8 +5,9 @@ import csv
 import datetime as dt
 import sys
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from src.core.paths import ROOT, configure_environment, default_output_path, model_path, project_path
 
@@ -85,6 +86,28 @@ REQUIRED_DETECTION_CLASSES = [
 ]
 
 
+@dataclass
+class DetectionModels:
+    detect_model: Any
+    ocr_model: Any
+    message_model: Any
+    ids: Dict[str, int]
+
+
+@dataclass
+class WeaponRuntime:
+    names: List[str]
+    model: Any
+    transform: ImageTransform
+
+
+@dataclass
+class AnalysisRunResult:
+    rows: List[List[object]]
+    analyzed: int
+    final_weapons: Optional[List[str]]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Analyze Splatoon 3 footage.")
     parser.add_argument("--input", required=True, help="Image or video file to analyze.")
@@ -109,6 +132,52 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-header", action="store_true", help="Do not write a CSV header row.")
     parser.add_argument("--list-model-names", action="store_true", help="Print loaded model class names and exit.")
     return parser.parse_args()
+
+
+def resolve_io_paths(args: argparse.Namespace) -> tuple[Path, Path]:
+    input_path = project_path(args.input)
+    if not input_path.exists():
+        raise FileNotFoundError(input_path)
+    output_path = project_path(args.output) if args.output else default_output_path(input_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    return input_path, output_path
+
+
+def load_detection_models(args: argparse.Namespace, device: str) -> DetectionModels:
+    detect_model = load_yolo_model(model_path("the_model.pt"), device, args.conf, args.iou)
+    ocr_model = load_yolo_model(model_path("ocr_model.pt"), device, args.conf, args.iou)
+    message_model = load_yolo_model(model_path("message_ocr_model.pt"), device, args.conf, args.iou)
+    ids = class_ids(detect_model.names, REQUIRED_DETECTION_CLASSES)
+    return DetectionModels(detect_model, ocr_model, message_model, ids)
+
+
+def print_model_names(models: DetectionModels) -> None:
+    print("detection:", models.detect_model.names)
+    print("number_ocr:", models.ocr_model.names)
+    print("message_ocr:", models.message_model.names)
+
+
+def load_weapon_runtime(device: str) -> WeaponRuntime:
+    weapon_names = load_weapon_names(ROOT / "main_weapon_list.txt")
+    weapon_model = torch_load(model_path("main_weapons_classification_weight.pth"), device)
+    weapon_model.eval()
+    weapon_output_count = weapon_model_output_count(weapon_model)
+    if weapon_output_count is not None and weapon_output_count != len(weapon_names):
+        print(
+            "Warning: weapon model output count "
+            f"({weapon_output_count}) does not match main_weapon_list.txt ({len(weapon_names)})."
+        )
+    return WeaponRuntime(weapon_names, weapon_model, ImageTransform())
+
+
+def preview_dir_from_arg(value: str | None) -> Path | None:
+    if not value:
+        return None
+    save_preview_dir = Path(value).expanduser()
+    if not save_preview_dir.is_absolute():
+        save_preview_dir = ROOT / save_preview_dir
+    save_preview_dir.mkdir(parents=True, exist_ok=True)
+    return save_preview_dir
 
 
 def analyze_results(
@@ -158,51 +227,41 @@ def analyze_results(
     return row
 
 
-def main() -> int:
-    args = parse_args()
-    input_path = project_path(args.input)
-    if not input_path.exists():
-        raise FileNotFoundError(input_path)
+def update_weapon_warmup(
+    results,
+    args: argparse.Namespace,
+    models: DetectionModels,
+    weapons: WeaponRuntime,
+    device: str,
+    weapon_votes: List[Optional[List[str]]],
+    final_weapons: Optional[List[str]],
+) -> Optional[List[str]]:
+    if final_weapons is not None or len(weapon_votes) >= args.warmup_frames:
+        return final_weapons
+    vote = classify_weapons(results, weapons.model, weapons.names, device, weapons.transform, models.ids)
+    if vote:
+        weapon_votes.append(vote)
+        print(f"Weapon warmup frame {len(weapon_votes)}/{args.warmup_frames}: {vote}")
+    if len(weapon_votes) >= args.warmup_frames:
+        final_weapons = vote_weapons(weapon_votes)
+        print(f"Weapon warmup complete: {final_weapons}")
+    return final_weapons
 
-    output_path = project_path(args.output) if args.output else default_output_path(input_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    device = choose_device(args.device)
-    print(f"Using device: {device}")
-
-    detect_model = load_yolo_model(model_path("the_model.pt"), device, args.conf, args.iou)
-    ocr_model = load_yolo_model(model_path("ocr_model.pt"), device, args.conf, args.iou)
-    message_model = load_yolo_model(model_path("message_ocr_model.pt"), device, args.conf, args.iou)
-    ids = class_ids(detect_model.names, REQUIRED_DETECTION_CLASSES)
-
-    if args.list_model_names:
-        print("detection:", detect_model.names)
-        print("number_ocr:", ocr_model.names)
-        print("message_ocr:", message_model.names)
-        return 0
-
-    weapon_names = load_weapon_names(ROOT / "main_weapon_list.txt")
-    weapon_model = torch_load(model_path("main_weapons_classification_weight.pth"), device)
-    weapon_model.eval()
-    weapon_output_count = weapon_model_output_count(weapon_model)
-    if weapon_output_count is not None and weapon_output_count != len(weapon_names):
-        print(
-            "Warning: weapon model output count "
-            f"({weapon_output_count}) does not match main_weapon_list.txt ({len(weapon_names)})."
-        )
-    transform = ImageTransform()
-
+def analyze_frame_stream(
+    args: argparse.Namespace,
+    input_path: Path,
+    device: str,
+    models: DetectionModels,
+    weapons: WeaponRuntime,
+) -> AnalysisRunResult:
     rows: List[List[object]] = []
     weapon_votes: List[Optional[List[str]]] = []
     final_weapons: Optional[List[str]] = None
     analyzed = 0
     saved_previews = 0
     analysis_time = dt.datetime.now().isoformat(timespec="seconds")
-    save_preview_dir = Path(args.save_preview_dir).expanduser() if args.save_preview_dir else None
-    if save_preview_dir and not save_preview_dir.is_absolute():
-        save_preview_dir = ROOT / save_preview_dir
-    if save_preview_dir:
-        save_preview_dir.mkdir(parents=True, exist_ok=True)
+    save_preview_dir = preview_dir_from_arg(args.save_preview_dir)
 
     for _, elapsed, frame_bgr in frame_iter(
         input_path,
@@ -212,25 +271,25 @@ def main() -> int:
         args.stop_seconds,
     ):
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        results = detect_model(frame_rgb, 640)
-
-        if final_weapons is None and len(weapon_votes) < args.warmup_frames:
-            vote = classify_weapons(results, weapon_model, weapon_names, device, transform, ids)
-            if vote:
-                weapon_votes.append(vote)
-                print(f"Weapon warmup frame {len(weapon_votes)}/{args.warmup_frames}: {vote}")
-            if len(weapon_votes) >= args.warmup_frames:
-                final_weapons = vote_weapons(weapon_votes)
-                print(f"Weapon warmup complete: {final_weapons}")
+        results = models.detect_model(frame_rgb, 640)
+        final_weapons = update_weapon_warmup(
+            results,
+            args,
+            models,
+            weapons,
+            device,
+            weapon_votes,
+            final_weapons,
+        )
 
         rows.append(
             analyze_results(
                 results,
                 elapsed,
                 analysis_time,
-                ids,
-                ocr_model,
-                message_model,
+                models.ids,
+                models.ocr_model,
+                models.message_model,
                 final_weapons,
                 args.count_box_conf,
                 args.digit_conf,
@@ -241,7 +300,7 @@ def main() -> int:
         analyzed += 1
 
         if args.preview or save_preview_dir:
-            preview = draw_preview(frame_bgr, results, detect_model.names)
+            preview = draw_preview(frame_bgr, results, models.detect_model.names)
 
         if save_preview_dir and saved_previews < args.save_preview_limit:
             cv2.imwrite(str(save_preview_dir / f"frame_{analyzed:05d}_{elapsed:.1f}s.jpg"), preview)
@@ -260,15 +319,37 @@ def main() -> int:
     if args.preview:
         cv2.destroyAllWindows()
 
+    return AnalysisRunResult(rows, analyzed, final_weapons)
+
+
+def write_analysis_csv(output_path: Path, rows: List[List[object]], include_header: bool = True) -> None:
     with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        if not args.no_header:
+        if include_header:
             writer.writerow(CSV_HEADER)
         writer.writerows(rows)
 
-    print(f"Analyzed frames: {analyzed}")
+
+def main() -> int:
+    args = parse_args()
+    input_path, output_path = resolve_io_paths(args)
+
+    device = choose_device(args.device)
+    print(f"Using device: {device}")
+
+    models = load_detection_models(args, device)
+
+    if args.list_model_names:
+        print_model_names(models)
+        return 0
+
+    weapons = load_weapon_runtime(device)
+    result = analyze_frame_stream(args, input_path, device, models, weapons)
+    write_analysis_csv(output_path, result.rows, include_header=not args.no_header)
+
+    print(f"Analyzed frames: {result.analyzed}")
     print(f"Wrote CSV: {output_path}")
-    if final_weapons is None:
+    if result.final_weapons is None:
         print("Weapon warmup did not complete; CSV weapon fields may be empty.", file=sys.stderr)
     return 0
 

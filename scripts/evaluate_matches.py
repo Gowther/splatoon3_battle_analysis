@@ -87,6 +87,10 @@ def smoothing_config(defaults: dict[str, Any]) -> CountSmoothingConfig:
         max_jump=int(raw.get("max_jump", 20)),
         neighbor_tolerance=int(raw.get("neighbor_tolerance", 3)),
         lookahead=int(raw.get("lookahead", 3)),
+        leading_lookahead=int(raw.get("leading_lookahead", 3)),
+        max_value=int(raw.get("max_value", 100)),
+        digit_drop_max_raw=int(raw.get("digit_drop_max_raw", 30)),
+        digit_drop_tolerance=int(raw.get("digit_drop_tolerance", 5)),
     )
 
 

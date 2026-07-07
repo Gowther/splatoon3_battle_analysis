@@ -24,6 +24,30 @@ TEAM_COLORS = {
 }
 
 
+def color_from_hsv_ranges(hsv_ranges: Sequence[Dict[str, Sequence[int]]]) -> Tuple[int, int, int]:
+    if not hsv_ranges:
+        return (255, 255, 255)
+    first_range = hsv_ranges[0]
+    lower = first_range.get("lower", [0, 80, 80])
+    upper = first_range.get("upper", [0, 255, 255])
+    hue = int(round((int(lower[0]) + int(upper[0])) / 2.0)) % 180
+    hsv = np.array([[[hue, 210, 255]]], dtype=np.uint8)
+    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0, 0]
+    return tuple(int(value) for value in bgr)
+
+
+def team_display_color(team: str, config: Dict) -> Tuple[int, int, int]:
+    configured = config.get("rendering", {}).get("team_colors_bgr", {})
+    if isinstance(configured, dict) and team in configured:
+        color = configured[team]
+        if isinstance(color, (list, tuple)) and len(color) == 3:
+            return tuple(int(value) for value in color)
+    if team in TEAM_COLORS:
+        return TEAM_COLORS[team]
+    team_config = config.get("teams", {}).get(team, {})
+    return color_from_hsv_ranges(team_config.get("hsv_ranges", []))
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render overhead-map heatmaps and team routes.")
     parser.add_argument("--config", default="src/heatmap/config_match9.yaml")
@@ -117,7 +141,9 @@ def build_heat(points: Sequence[Point], shape: Tuple[int, int], mask: np.ndarray
     active = heat[heat > 0]
     if active.size == 0:
         return heat
-    scale = float(np.percentile(active, 99.0))
+    percentile = float(config["rendering"].get("heat_scale_percentile", 99.0))
+    percentile = min(max(percentile, 50.0), 100.0)
+    scale = float(np.percentile(active, percentile))
     if scale <= 0:
         return heat
     return np.clip(heat / scale, 0.0, 1.0)
@@ -231,12 +257,13 @@ def render_team_heatmaps(
 
     combined = base.copy()
     for team in config["teams"]:
+        color = team_display_color(team, config)
         heat = build_heat(by_team.get(team, []), base.shape[:2], mask, config)
-        image = blend_heat(base, heat, TEAM_COLORS.get(team, (255, 255, 255)), max_alpha, config)
+        image = blend_heat(base, heat, color, max_alpha, config)
         path = output_dir / f"heatmap_{team}.png"
         save_image(path, image)
         rendered[f"heatmap_{team}"] = path
-        combined = blend_heat(combined, heat, TEAM_COLORS.get(team, (255, 255, 255)), max_alpha * 0.9, config)
+        combined = blend_heat(combined, heat, color, max_alpha * 0.9, config)
 
     combined_path = output_dir / "heatmap_combined.png"
     save_image(combined_path, combined)
@@ -262,7 +289,7 @@ def render_routes(base: np.ndarray, track_points: Sequence[Point], config: Dict)
     max_draw_step = float(config["rendering"]["route_max_draw_step_px"])
 
     for (team, _), points in grouped_tracks(track_points).items():
-        color = TEAM_COLORS.get(team, (255, 255, 255))
+        color = team_display_color(team, config)
         previous: Optional[Point] = None
         for point in points:
             x = int(round(float(point["x"])))

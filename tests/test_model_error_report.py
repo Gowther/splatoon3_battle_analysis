@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from src.model_error_report import analyze_csv, build_error_report
+from src.model_error_report import analyze_csv, build_error_report, paths_from_evaluation_results
 
 
 FIELDNAMES = [
@@ -77,6 +78,83 @@ class ModelErrorReportTests(unittest.TestCase):
             report = build_error_report([csv_path])
         self.assertEqual(report["status"], "passed")
         self.assertEqual(report["file_count"], 1)
+
+    def test_low_frequency_message_ocr_samples_do_not_need_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "messages.csv"
+            write_rows(
+                csv_path,
+                [
+                    {
+                        "elapsed_time": str(index),
+                        **{f"player_state_{player}": "0" for player in range(1, 9)},
+                        **{f"weapon_{player}": f"W{player}" for player in range(1, 9)},
+                        "count_left": "90",
+                        "count_right": "80",
+                        "area_count": "1",
+                        "message": "ホ" if index in (2, 7) else "",
+                    }
+                    for index in range(20)
+                ],
+            )
+            result = analyze_csv(csv_path)
+
+        self.assertEqual(result["metrics"]["message_rows"], 2)
+        self.assertNotIn("message_ocr", {issue["category"] for issue in result["issues"]})
+
+    def test_dense_message_ocr_samples_still_get_info_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "dense_messages.csv"
+            write_rows(
+                csv_path,
+                [
+                    {
+                        "elapsed_time": str(index),
+                        **{f"player_state_{player}": "0" for player in range(1, 9)},
+                        **{f"weapon_{player}": f"W{player}" for player in range(1, 9)},
+                        "count_left": "90",
+                        "count_right": "80",
+                        "area_count": "1",
+                        "message": "ホ",
+                    }
+                    for index in range(12)
+                ],
+            )
+            result = analyze_csv(csv_path)
+
+        self.assertIn("message_ocr", {issue["category"] for issue in result["issues"]})
+
+    def test_paths_from_evaluation_results_can_filter_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            results_path = Path(tmp) / "evaluation_results.json"
+            results_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "current",
+                            "kind": "analysis",
+                            "raw_csv": "outputs/evaluation/current/raw.csv",
+                            "smoothed_csv": "outputs/evaluation/current/smoothed.csv",
+                        },
+                        {
+                            "id": "old_candidate",
+                            "kind": "analysis",
+                            "raw_csv": "outputs/evaluation/old/raw.csv",
+                            "smoothed_csv": "outputs/evaluation/old/smoothed.csv",
+                        },
+                        {
+                            "id": "heatmap_only",
+                            "kind": "heatmap",
+                            "report": "outputs/heatmap/report.md",
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            paths = paths_from_evaluation_results(results_path, use_smoothed=True, only_ids={"current"})
+
+        self.assertEqual(paths, [Path("outputs/evaluation/current/smoothed.csv")])
 
 
 if __name__ == "__main__":

@@ -80,6 +80,115 @@ def build_experiment_plan(
     }
 
 
+def status_counts(results: list[dict[str, Any]] | None) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in results or []:
+        status = str(item.get("status", "missing"))
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def benchmark_commands(experiment: dict[str, Any], benchmark_root: str) -> list[str]:
+    experiment_dir = f"{benchmark_root}/{experiment['id']}"
+    commands = [
+        f"python scripts/run_validation_suite.py --output {experiment_dir}/baseline_validation_suite.json",
+        f"python scripts/report_model_errors.py --evaluation-results {experiment_dir}/baseline_validation_suite/evaluation/evaluation_results.json --smoothed --output {experiment_dir}/baseline_model_errors.md --json-output {experiment_dir}/baseline_model_errors.json",
+    ]
+    if experiment.get("area") == "heatmap":
+        commands.append(
+            f"python scripts/report_heatmap_quality_loop.py --export-package --package-dir {experiment_dir}/annotation_package --output {experiment_dir}/heatmap_quality_loop.md --json-output {experiment_dir}/heatmap_quality_loop.json"
+        )
+    commands.extend(experiment.get("baseline_commands", []))
+    return commands
+
+
+def result_template(experiment: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "experiment_id": experiment["id"],
+        "candidate": experiment.get("candidate", ""),
+        "status": "not_run",
+        "baseline_metrics": {},
+        "candidate_metrics": {},
+        "decision": "pending",
+        "notes": "",
+    }
+
+
+def build_benchmark_plan(
+    experiment_plan: dict[str, Any],
+    *,
+    evaluation_results: list[dict[str, Any]] | None = None,
+    validation_ids: list[str] | None = None,
+    benchmark_root: str = "outputs/model_benchmarks",
+    include_baseline_priority: bool = False,
+) -> dict[str, Any]:
+    selected_experiments = [
+        experiment
+        for experiment in experiment_plan.get("experiments", [])
+        if include_baseline_priority or experiment.get("priority") != "baseline"
+    ]
+    runs = [
+        {
+            "id": experiment["id"],
+            "priority": experiment.get("priority", ""),
+            "area": experiment.get("area", ""),
+            "candidate": experiment.get("candidate", ""),
+            "validation_ids": validation_ids or [],
+            "commands": benchmark_commands(experiment, benchmark_root),
+            "metrics": experiment.get("metrics", []),
+            "pass_criteria": experiment.get("pass_criteria", []),
+            "result_template": result_template(experiment),
+        }
+        for experiment in selected_experiments
+    ]
+    return {
+        "status": "ready" if runs else "empty",
+        "benchmark_root": benchmark_root,
+        "baseline_result_status_counts": status_counts(evaluation_results),
+        "validation_ids": validation_ids or [],
+        "runs": runs,
+        "summary": {
+            "run_count": len(runs),
+            "high_priority": sum(1 for item in runs if item["priority"] == "high"),
+            "medium_priority": sum(1 for item in runs if item["priority"] == "medium"),
+            "baseline_priority": sum(1 for item in runs if item["priority"] == "baseline"),
+        },
+    }
+
+
+def render_benchmark_markdown(plan: dict[str, Any]) -> str:
+    lines = [
+        "# Model Benchmark Plan",
+        "",
+        f"- status: `{plan['status']}`",
+        f"- benchmark_root: `{plan['benchmark_root']}`",
+        f"- runs: {plan['summary']['run_count']}",
+        f"- validation_ids: {', '.join(plan.get('validation_ids', []))}",
+        f"- baseline_result_status_counts: {json.dumps(plan.get('baseline_result_status_counts', {}), ensure_ascii=False)}",
+        "",
+        "| priority | area | id | candidate | metrics |",
+        "| --- | --- | --- | --- | ---: |",
+    ]
+    for run in plan.get("runs", []):
+        lines.append(
+            "| {priority} | {area} | {id} | {candidate} | {metrics} |".format(
+                priority=run.get("priority", ""),
+                area=run.get("area", ""),
+                id=run.get("id", ""),
+                candidate=run.get("candidate", ""),
+                metrics=len(run.get("metrics", [])),
+            )
+        )
+
+    for run in plan.get("runs", []):
+        lines.extend(["", f"## {run['id']}", "", "Commands:"])
+        lines.extend(f"- `{command}`" for command in run.get("commands", []))
+        lines.extend(["", "Pass criteria:"])
+        lines.extend(f"- {criterion}" for criterion in run.get("pass_criteria", []))
+        lines.extend(["", "Result template:", "", "```json", json.dumps(run["result_template"], indent=2, ensure_ascii=False), "```"])
+    return "\n".join(lines) + "\n"
+
+
 def render_markdown(plan: dict[str, Any]) -> str:
     lines = [
         "# Model Experiment Plan",

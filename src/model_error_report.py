@@ -27,6 +27,8 @@ class ErrorThresholds:
     weapon_missing_after_first_warning_ratio: float = 0.1
     count_row_warning_ratio: float = 0.2
     objective_row_info_ratio: float = 0.2
+    message_rows_info_min_count: int = 10
+    message_rows_info_ratio: float = 0.1
 
 
 def populated(row: dict[str, str], key: str) -> bool:
@@ -189,7 +191,11 @@ def analyze_csv(path: Path, thresholds: ErrorThresholds = ErrorThresholds()) -> 
         )
 
     message_rows = [row for row in rows if populated(row, "message")]
-    if message_rows:
+    message_row_ratio = ratio(len(message_rows), row_count)
+    if (
+        len(message_rows) >= thresholds.message_rows_info_min_count
+        and message_row_ratio >= thresholds.message_rows_info_ratio
+    ):
         issues.append(
             issue(
                 "message_ocr",
@@ -241,6 +247,7 @@ def analyze_csv(path: Path, thresholds: ErrorThresholds = ErrorThresholds()) -> 
             "objective_rows": objective_rows,
             "objective_row_ratio": objective_row_ratio,
             "message_rows": len(message_rows),
+            "message_row_ratio": message_row_ratio,
         },
         "samples": {
             "count_jump_warnings": jump_warnings[:10],
@@ -257,12 +264,20 @@ def analyze_csv(path: Path, thresholds: ErrorThresholds = ErrorThresholds()) -> 
     }
 
 
-def paths_from_evaluation_results(path: Path, use_smoothed: bool = False) -> list[Path]:
+def paths_from_evaluation_results(
+    path: Path,
+    use_smoothed: bool = False,
+    only_ids: set[str] | None = None,
+) -> list[Path]:
     results_path = project_path(path)
     with results_path.open(encoding="utf-8") as f:
         results = json.load(f)
     key = "smoothed_csv" if use_smoothed else "raw_csv"
-    return [Path(item[key]) for item in results if item.get("kind") == "analysis" and item.get(key)]
+    return [
+        Path(item[key])
+        for item in results
+        if item.get("kind") == "analysis" and item.get(key) and (not only_ids or item.get("id") in only_ids)
+    ]
 
 
 def build_error_report(csv_paths: list[Path], thresholds: ErrorThresholds = ErrorThresholds()) -> dict[str, Any]:

@@ -7,6 +7,8 @@ import tempfile
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from src.project_check_registry import experiment_delivery_steps, heatmap_annotation_steps
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = ROOT / ".venv" / "bin" / "python"
@@ -224,6 +226,7 @@ def main() -> int:
             ],
             env,
         )
+        run_step("heatmap config validation helper", [PYTHON, "scripts/validate_heatmap_configs.py", "--strict"], env)
         run_step(
             "heatmap anomaly export helper",
             [
@@ -311,6 +314,23 @@ def main() -> int:
             env,
         )
         run_step(
+            "sample intake dry run",
+            [
+                PYTHON,
+                "scripts/intake_samples.py",
+                "--video",
+                args.match_video,
+                "--match-id",
+                "sample_intake_smoke",
+                "--report",
+                work_dir / "sample_intake.md",
+                "--json-output",
+                work_dir / "sample_intake.json",
+                "--strict",
+            ],
+            env,
+        )
+        run_step(
             "model quality overview helper",
             [
                 PYTHON,
@@ -322,6 +342,44 @@ def main() -> int:
             ],
             env,
         )
+        run_step(
+            "project hygiene report helper",
+            [
+                PYTHON,
+                "scripts/report_project_hygiene.py",
+                "--output",
+                work_dir / "project_hygiene.md",
+                "--json-output",
+                work_dir / "project_hygiene.json",
+            ],
+            env,
+        )
+        run_step(
+            "dataset governance report helper",
+            [
+                PYTHON,
+                "scripts/report_dataset_governance.py",
+                "--output",
+                work_dir / "dataset_governance.md",
+                "--json-output",
+                work_dir / "dataset_governance.json",
+            ],
+            env,
+        )
+        run_step(
+            "heatmap quality loop helper",
+            [
+                PYTHON,
+                "scripts/report_heatmap_quality_loop.py",
+                "--output",
+                work_dir / "heatmap_quality_loop.md",
+                "--json-output",
+                work_dir / "heatmap_quality_loop.json",
+            ],
+            env,
+        )
+        for step in heatmap_annotation_steps(PYTHON, work_dir):
+            run_step(step.name, step.command, env)
         run_step(
             "model error report helper",
             [
@@ -336,22 +394,8 @@ def main() -> int:
             ],
             env,
         )
-        run_step(
-            "model experiment plan helper",
-            [
-                PYTHON,
-                "scripts/plan_model_experiments.py",
-                "--model-errors",
-                work_dir / "model_errors.json",
-                "--heatmap-comparison",
-                work_dir / "heatmap_comparison.json",
-                "--output",
-                work_dir / "model_experiment_plan.md",
-                "--json-output",
-                work_dir / "model_experiment_plan.json",
-            ],
-            env,
-        )
+        for step in experiment_delivery_steps(PYTHON, ROOT, work_dir):
+            run_step(step.name, step.command, env)
 
     if args.evaluation:
         run_step(

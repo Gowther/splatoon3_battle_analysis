@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--csv", action="append", default=[], help="Analysis CSV path. May be repeated.")
     parser.add_argument("--evaluation-results", type=Path, help="evaluation_results.json from scripts/evaluate_matches.py.")
     parser.add_argument("--smoothed", action="store_true", help="Use smoothed_csv entries from evaluation results.")
+    parser.add_argument(
+        "--only-id",
+        action="append",
+        default=[],
+        help="Only include a matching evaluation result id. May be repeated.",
+    )
     parser.add_argument("--output", type=Path, help="Markdown report output. Prints to stdout when omitted.")
     parser.add_argument("--json-output", type=Path, help="Optional JSON report output.")
     parser.add_argument("--strict", action="store_true", help="Exit non-zero when high or warning issues are found.")
@@ -50,7 +56,14 @@ def main() -> int:
     args = parse_args()
     csv_paths = [Path(path) for path in args.csv]
     if args.evaluation_results:
-        csv_paths.extend(paths_from_evaluation_results(args.evaluation_results, use_smoothed=args.smoothed))
+        only_ids = set(args.only_id)
+        csv_paths.extend(
+            paths_from_evaluation_results(
+                args.evaluation_results,
+                use_smoothed=args.smoothed,
+                only_ids=only_ids or None,
+            )
+        )
     if not csv_paths:
         raise SystemExit("pass at least one --csv or --evaluation-results")
 

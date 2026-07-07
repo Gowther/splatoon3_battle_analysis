@@ -105,6 +105,22 @@ python scripts/report_model_quality.py \
 If your latest fixed evaluation lives outside `outputs/evaluation/`, pass that
 `evaluation_results.json` path with `--evaluation-results`.
 
+## Dataset Governance
+
+Use the governance report before adding or promoting training/evaluation data:
+
+```bash
+source scripts/use_local_env.sh
+python scripts/report_dataset_governance.py \
+  --output outputs/dataset_governance.md \
+  --json-output outputs/dataset_governance.json \
+  --strict
+```
+
+It checks weapon dataset/label/model alignment, low-sample classes, and registry
+metadata such as `purpose`, `notes`, analysis window fields, and heatmap quality
+gates.
+
 ## Model Error Reports
 
 Use the model error report before deciding whether a problem belongs to YOLO,
@@ -137,6 +153,79 @@ python scripts/report_heatmap_comparison.py \
 Use the anomaly samples to pick frames for manual point labels before investing
 in coordinate normalization or event joins.
 
+## Heatmap Quality Loop
+
+Export a manual annotation package from the registered heatmap samples:
+
+```bash
+source scripts/use_local_env.sh
+python scripts/report_heatmap_quality_loop.py \
+  --export-package \
+  --package-dir outputs/heatmap_quality_loop \
+  --output outputs/heatmap_quality_loop.md \
+  --json-output outputs/heatmap_quality_loop.json
+```
+
+After filling `annotation_template.csv`, run the same command with
+`--annotation-csv` plus optional gates such as `--min-recall` and
+`--max-mean-error-px`.
+
+For a smaller first labeling pass, use the named annotation round:
+
+```bash
+source scripts/use_local_env.sh
+python scripts/prepare_heatmap_annotation_round.py \
+  --round-id first_manual_loop \
+  --package-dir outputs/heatmap_annotation_round1 \
+  --output outputs/heatmap_annotation_round1.md \
+  --json-output outputs/heatmap_annotation_round1.json
+```
+
+Build the optional static HTML helper in the same package directory:
+
+```bash
+python scripts/build_heatmap_annotation_ui.py \
+  --annotation-csv outputs/heatmap_annotation_round1/annotation_template.csv \
+  --output outputs/heatmap_annotation_round1/annotation_ui.html
+```
+
+Once labels are filled, turn the label metrics into concrete tuning actions:
+
+```bash
+python scripts/suggest_heatmap_tuning.py \
+  --annotation-csv outputs/heatmap_annotation_round1/annotation_template.csv \
+  --heatmap-comparison outputs/heatmap_comparison.json \
+  --output outputs/heatmap_tuning_suggestions.md \
+  --json-output outputs/heatmap_tuning_suggestions.json
+```
+
+Generate parameter experiment configs after labels are available:
+
+```bash
+python scripts/run_heatmap_parameter_experiments.py \
+  --annotation-csv outputs/heatmap_annotation_round1/annotation_template.csv \
+  --output-root outputs/heatmap_parameter_experiments \
+  --write-configs \
+  --output outputs/heatmap_parameter_experiments.md \
+  --json-output outputs/heatmap_parameter_experiments.json
+```
+
+## Heatmap Coordinate Normalization
+
+Use the stage coordinate report to convert current video-pixel heatmap positions
+into normalized `stage_x/stage_y` coordinates within the configured map ROI:
+
+```bash
+python scripts/report_stage_coordinates.py \
+  --config src/heatmap/config_match9.yaml \
+  --normalized-output outputs/heatmap_match9/player_tracks_stage.csv \
+  --output outputs/stage_coordinates.md \
+  --json-output outputs/stage_coordinates.json
+```
+
+This is a linear ROI normalization bridge. True stage-map homography can replace
+it after stage map control points are labeled.
+
 ## Model Experiment Planning
 
 After generating quality and error reports, turn candidate model swaps into a
@@ -153,6 +242,40 @@ python scripts/plan_model_experiments.py \
 
 The plan keeps YOLO11/YOLOv8, PaddleOCR, newer weapon classifiers, and heatmap
 detector ideas as ranked experiments with baseline commands and pass criteria.
+
+Build a benchmark matrix from that plan before running candidate experiments:
+
+```bash
+python scripts/benchmark_model_experiments.py \
+  --experiment-plan outputs/model_experiment_plan.json \
+  --output outputs/model_benchmark_plan.md \
+  --json-output outputs/model_benchmark_plan.json
+```
+
+Snapshot the current baseline reports into the benchmark directory before
+testing replacements:
+
+```bash
+python scripts/report_model_benchmark_baseline.py \
+  --output outputs/model_benchmarks/baseline_snapshot.md \
+  --json-output outputs/model_benchmarks/baseline_snapshot.json
+```
+
+Capture runtime baselines and experiment provenance when comparing candidates:
+
+```bash
+python scripts/report_runtime_benchmarks.py \
+  --output outputs/runtime/runtime_benchmarks.md \
+  --json-output outputs/runtime/runtime_benchmarks.json
+python scripts/write_experiment_manifest.py \
+  --experiment-id local_refactor_baseline \
+  --artifact baseline=outputs/model_benchmarks/baseline_snapshot.json \
+  --output outputs/experiment_manifest.md \
+  --json-output outputs/experiment_manifest.json
+python scripts/report_heatmap_productization.py \
+  --output outputs/heatmap_productization.md \
+  --json-output outputs/heatmap_productization.json
+```
 
 ## Adding New Data
 

@@ -10,8 +10,25 @@
   "heatmap_matches": [
     "match_9",
     "match_10",
-    "match_11"
+    "match_11",
+    "f_match_1",
+    "f_match_2",
+    "f_match_3",
+    "f_match_4",
+    "f_match_5"
   ],
+  "rounds": {
+    "first_manual_loop": {
+      "description": "First manual labels for heatmap tracker tuning. Covers one older normal heatmap sample and two overhead samples with different observed tracker behavior.",
+      "matches": ["match_10", "f_match_3", "f_match_5"],
+      "frames_per_match": 6
+    },
+    "overhead_validation": {
+      "description": "Focused overhead validation set for regression checks after tuning.",
+      "matches": ["f_match_1", "f_match_2", "f_match_3", "f_match_4", "f_match_5"],
+      "frames_per_match": 4
+    }
+  },
   "notes": [
     "Generated annotation templates leave manual x/y fields empty.",
     "Prediction columns are included only as references and must not be treated as ground truth."
