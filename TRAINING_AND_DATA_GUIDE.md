@@ -63,6 +63,10 @@ python scripts/report_dataset_governance.py \
   --output outputs/dataset_governance.md \
   --json-output outputs/dataset_governance.json \
   --strict
+python scripts/report_model_registry.py \
+  --output outputs/model_registry.md \
+  --json-output outputs/model_registry.json \
+  --strict
 python scripts/run_validation_suite.py
 ```
 
@@ -341,7 +345,7 @@ python scripts/report_model_data_readiness.py \
 
 还不够清楚的地方：
 
-- `models/` 只有文件，没有模型 registry，缺少版本、来源、训练数据和指标的结构化记录。
+- `models/` 现在已有 `config/models.json` registry，但候选模型晋升时还需要把训练数据和 metrics 自动写回 manifest。
 - `main_training_dataset/` 是本地忽略目录，缺少数据 manifest 后很难复现。
 - YOLO/OCR 训练资产和武器分类器训练资产还没有统一实验目录规范。
 - `src/heatmap/config_*.yaml` 数量变多后，需要模板化或 registry 驱动生成。
@@ -361,7 +365,7 @@ python scripts/report_model_data_readiness.py \
 - `src/run_analysis.py` 仍然是重业务入口，YOLO/OCR/weapon/runtime 状态耦合较重。
 - 训练 CLI 只支持重新训练候选武器分类器，不支持从现有 `.pth` resume/fine-tune。
 - YOLO/OCR 没有项目级训练流水线，容易回到手动脚本和不可复现实验。
-- 模型晋升流程还靠人工约定，缺少 `config/models.json` 这类模型 registry。
+- 模型晋升流程已有 `config/models.json` 起点，但还没有自动化的候选模型晋升/回滚命令。
 - 热力图配置和输出越来越多，后续会需要更强的配置模板和注册工具。
 
 ## 推荐重构顺序

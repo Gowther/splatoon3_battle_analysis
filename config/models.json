@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "description": "Canonical runtime model registry. Paths are relative to the project root.",
+  "models": [
+    {
+      "id": "ui_detector_yolov5",
+      "area": "ui_detection",
+      "role": "canonical_runtime",
+      "path": "models/the_model.pt",
+      "framework": "YOLOv5 / PyTorch",
+      "file_type": "pt",
+      "expected_sha256": "6efcd8f127cf305bc0c3a6f6f7a91ebfc8326de4d4f0f66abeb1afef419fe898",
+      "training_status": "external_legacy",
+      "training_entrypoint": "",
+      "promotion_gate": "scripts/run_validation_suite.py",
+      "notes": "Current UI/object detector. Keep YOLOv5 as the control until a project-level detector training flow exists."
+    },
+    {
+      "id": "count_ocr",
+      "area": "count_ocr",
+      "role": "canonical_runtime",
+      "path": "models/ocr_model.pt",
+      "framework": "YOLOv5 / PyTorch",
+      "file_type": "pt",
+      "expected_sha256": "09fc73a39b7b0cac283b92e7456799b031454c97194599aa6a1ebbc4c3aa1c46",
+      "training_status": "external_legacy",
+      "training_entrypoint": "",
+      "promotion_gate": "scripts/run_validation_suite.py",
+      "notes": "Number OCR model used by the current offline analysis path."
+    },
+    {
+      "id": "message_ocr",
+      "area": "message_ocr",
+      "role": "canonical_runtime",
+      "path": "models/message_ocr_model.pt",
+      "framework": "YOLOv5 / PyTorch",
+      "file_type": "pt",
+      "expected_sha256": "f5567bc1ec4632927637d9778a8645f366d2f8b92ac3fc26e163ce51b4c12519",
+      "training_status": "external_legacy",
+      "training_entrypoint": "",
+      "promotion_gate": "scripts/run_validation_suite.py",
+      "notes": "Message OCR model. Runtime defaults are intentionally conservative."
+    },
+    {
+      "id": "weapon_classifier_resnet18",
+      "area": "weapon_classifier",
+      "role": "canonical_runtime",
+      "path": "models/main_weapons_classification_weight.pth",
+      "framework": "TorchVision ResNet18",
+      "file_type": "pth",
+      "expected_sha256": "cd2896d6d9a39a799039c96af8cd6e0871fe150b5e07b7d04ba2155a9c29be3e",
+      "labels": "main_weapon_list.txt",
+      "training_status": "supported",
+      "training_entrypoint": "scripts/train_weapon_classifier.py",
+      "promotion_gate": "scripts/run_validation_suite.py",
+      "notes": "Current supported trainable model. The label file must match dataset class order and model output count."
+    }
+  ]
+}

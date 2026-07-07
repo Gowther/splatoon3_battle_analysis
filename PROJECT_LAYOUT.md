@@ -26,6 +26,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/model_quality.py` | Supported | Aggregated registry/evaluation/weapon/assets quality overview. |
 | `src/model_error_report.py` | Supported | CSV-level model/OCR risk signal reporting. |
 | `src/model_experiments.py` | Supported | Model replacement experiment planning and prioritization. |
+| `src/model_registry.py` | Supported | Canonical runtime model registry validation and reporting. |
 | `src/model_data_readiness.py` | Supported | Readiness gate before running the next data/model experiment phase. |
 | `src/model_benchmark_baseline.py` | Supported | Snapshot current evaluation/error/heatmap reports as a benchmark baseline. |
 | `src/dataset_governance.py` | Supported | Dataset, label, and registry metadata governance reporting. |
@@ -36,7 +37,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/change_package.py` | Supported | Worktree grouping and verification summary for review/commit planning. |
 | `src/experiment_manifest.py` | Supported | Reproducibility manifests for data/model experiments. |
 | `scripts/` | Supported | Health checks, summaries, evaluation, match intake, quality overview, model error reports, experiment planning, registry validation, heatmap reports, annotation exports, weapon training CLIs, and training planning. |
-| `config/` | Supported | Evaluation, registry, and annotation sample configuration. |
+| `config/` | Supported | Evaluation, data registry, model registry, annotation sample, and experiment configuration. |
 | `models/` | Runtime assets | Canonical `.pt` and `.pth` weights used by supported commands. |
 | `main_weapon_list.txt` | Runtime asset | Weapon classifier output-index to label mapping; must match the classifier output count. |
 | `main_icons/` | Training asset | Active weapon icon source set used by synthetic dataset generation. |
