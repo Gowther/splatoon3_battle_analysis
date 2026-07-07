@@ -14,6 +14,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/weapons.py` | Supported | Weapon crop/classification helpers. |
 | `src/weapon_training.py` | Supported | Weapon dataset validation, label sync, synthetic generation, and training helpers. |
 | `src/media.py` | Supported | Image/video frame iteration. |
+| `src/analysis_runtime.py` | Supported | Analysis CSV schema, output path, preview directory, and run-result helpers. |
 | `src/protocol.py` | Supported | 33-column CSV and GameState protocol contract. |
 | `src/heatmap/` | Supported | Heatmap calibration, player marker detection, trajectory quality, annotation, and anomaly helpers. |
 | `src/heatmap/comparison_report.py` | Supported | Cross-match heatmap quality and anomaly comparison reporting. |

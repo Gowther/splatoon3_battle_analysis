@@ -5,10 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.run_analysis import CSV_HEADER, preview_dir_from_arg, write_analysis_csv
+from src.analysis_runtime import CSV_HEADER, preview_dir_from_arg, write_analysis_csv
+from src.run_analysis import CSV_HEADER as RUN_ANALYSIS_CSV_HEADER
 
 
 class RunAnalysisRefactorTests(unittest.TestCase):
+    def test_run_analysis_reexports_csv_header_for_compatibility(self) -> None:
+        self.assertEqual(RUN_ANALYSIS_CSV_HEADER, CSV_HEADER)
+
     def test_write_analysis_csv_can_include_header(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "analysis.csv"
