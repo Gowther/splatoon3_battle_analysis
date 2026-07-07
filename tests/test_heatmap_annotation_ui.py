@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.heatmap.annotation_ui import build_annotation_ui, render_annotation_html
+from src.heatmap.annotation_ui import build_annotation_ui, prioritize_annotation_rows, render_annotation_html
 
 
 class HeatmapAnnotationUiTests(unittest.TestCase):
@@ -42,6 +42,84 @@ class HeatmapAnnotationUiTests(unittest.TestCase):
 
         self.assertEqual(report["status"], "ready")
         self.assertEqual(report["rows"], 1)
+
+    def test_prioritize_annotation_rows_moves_unlabeled_jump_resets_first(self) -> None:
+        rows = [
+            {
+                "match_id": "m1",
+                "time": "1.0",
+                "team": "blue",
+                "annotation_id": "matched",
+                "source_track_status": "matched",
+                "source_confidence": "0.2",
+            },
+            {
+                "match_id": "m1",
+                "time": "1.0",
+                "team": "blue",
+                "annotation_id": "jump",
+                "source_track_status": "jump_reset",
+                "source_confidence": "0.9",
+            },
+            {
+                "match_id": "m1",
+                "time": "2.0",
+                "team": "orange",
+                "annotation_id": "new",
+                "source_track_status": "new",
+                "source_confidence": "0.8",
+            },
+        ]
+
+        ordered = prioritize_annotation_rows(rows, 2)
+
+        self.assertEqual([row["annotation_id"] for row in ordered], ["jump", "new", "matched"])
+        self.assertEqual(ordered[0]["_row_index"], "2")
+
+    def test_build_annotation_ui_can_prioritize_rows_without_dropping_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            csv_path = root / "annotation_template.csv"
+            fieldnames = [
+                "match_id",
+                "time",
+                "team",
+                "annotation_id",
+                "source_track_status",
+                "source_confidence",
+            ]
+            with csv_path.open("w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(
+                    [
+                        {
+                            "match_id": "m1",
+                            "time": "1.0",
+                            "team": "blue",
+                            "annotation_id": "matched",
+                            "source_track_status": "matched",
+                            "source_confidence": "0.2",
+                        },
+                        {
+                            "match_id": "m1",
+                            "time": "1.0",
+                            "team": "blue",
+                            "annotation_id": "jump",
+                            "source_track_status": "jump_reset",
+                            "source_confidence": "0.9",
+                        },
+                    ]
+                )
+            html_path = root / "annotation_ui.html"
+
+            report = build_annotation_ui(csv_path, html_path, priority_limit=1)
+            html = html_path.read_text(encoding="utf-8")
+
+        self.assertEqual(report["priority_rows"], 1)
+        self.assertEqual(report["rows"], 2)
+        self.assertLess(html.find('"annotation_id": "jump"'), html.find('"annotation_id": "matched"'))
+        self.assertIn('"_row_index": "2"', html)
 
 
 if __name__ == "__main__":

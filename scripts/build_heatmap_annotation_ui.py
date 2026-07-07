@@ -25,13 +25,23 @@ def parse_args() -> argparse.Namespace:
         default=ROOT / "outputs" / "heatmap_annotation_round1" / "annotation_ui.html",
     )
     parser.add_argument("--title", default="Heatmap Annotation Round")
+    parser.add_argument(
+        "--priority-limit",
+        type=int,
+        help="Move the top N unlabeled priority tasks to the beginning of the UI list.",
+    )
     parser.add_argument("--json-output", type=Path)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    report = build_annotation_ui(args.annotation_csv.expanduser(), args.output.expanduser(), title=args.title)
+    report = build_annotation_ui(
+        args.annotation_csv.expanduser(),
+        args.output.expanduser(),
+        title=args.title,
+        priority_limit=args.priority_limit,
+    )
     if args.json_output:
         args.json_output.expanduser().parent.mkdir(parents=True, exist_ok=True)
         args.json_output.expanduser().write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

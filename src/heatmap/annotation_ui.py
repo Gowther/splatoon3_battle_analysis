@@ -8,6 +8,7 @@ from typing import Any
 
 from src.data_registry import display_path, resolve_project_path
 from src.heatmap.annotation_samples import ANNOTATION_FIELDS
+from src.heatmap.annotation_round import has_manual_position, is_visible_task, priority_score
 
 
 def read_annotation_rows(path: Path) -> list[dict[str, str]]:
@@ -29,11 +30,57 @@ def relative_asset_path(value: str, output_html: Path) -> str:
         return target.as_uri() if target.is_absolute() else str(target)
 
 
+def priority_group(row: dict[str, str]) -> tuple[str, str, str]:
+    return (row.get("match_id", ""), row.get("time", ""), row.get("team", ""))
+
+
+def priority_row_indices(rows: list[dict[str, str]], limit: int | None) -> list[int]:
+    if limit is None or limit <= 0:
+        return []
+
+    candidates = [
+        (index, row)
+        for index, row in enumerate(rows)
+        if is_visible_task(row) and not has_manual_position(row)
+    ]
+    candidates.sort(key=lambda item: (priority_score(item[1]), item[0]))
+
+    selected_indices: list[int] = []
+    seen_groups: set[tuple[str, str, str]] = set()
+    for index, row in candidates:
+        group = priority_group(row)
+        if group in seen_groups:
+            continue
+        seen_groups.add(group)
+        selected_indices.append(index)
+        if len(selected_indices) >= limit:
+            break
+    return selected_indices
+
+
+def order_annotation_rows(rows: list[dict[str, str]], priority_indices: list[int]) -> list[dict[str, str]]:
+    if not priority_indices:
+        return list(rows)
+
+    selected = set(priority_indices)
+    ordered_indices = priority_indices + [index for index in range(len(rows)) if index not in selected]
+    ordered_rows: list[dict[str, str]] = []
+    for index in ordered_indices:
+        item = dict(rows[index])
+        item["_row_index"] = str(index + 1)
+        ordered_rows.append(item)
+    return ordered_rows
+
+
+def prioritize_annotation_rows(rows: list[dict[str, str]], limit: int | None) -> list[dict[str, str]]:
+    return order_annotation_rows(rows, priority_row_indices(rows, limit))
+
+
 def prepare_rows(rows: list[dict[str, str]], output_html: Path) -> list[dict[str, str]]:
     prepared: list[dict[str, str]] = []
     for index, row in enumerate(rows):
         item = {field: row.get(field, "") for field in ANNOTATION_FIELDS}
-        item["_row_index"] = str(index + 1)
+        item["_row_index"] = row.get("_row_index", str(index + 1))
         item["_frame_src"] = relative_asset_path(item.get("frame_path", ""), output_html)
         item["_preview_src"] = relative_asset_path(item.get("preview_path", ""), output_html)
         prepared.append(item)
@@ -190,13 +237,22 @@ selectRow(0);
 """
 
 
-def build_annotation_ui(annotation_csv: Path, output_html: Path, title: str = "Heatmap Annotation") -> dict[str, Any]:
+def build_annotation_ui(
+    annotation_csv: Path,
+    output_html: Path,
+    title: str = "Heatmap Annotation",
+    priority_limit: int | None = None,
+) -> dict[str, Any]:
     rows = read_annotation_rows(annotation_csv)
+    priority_indices = priority_row_indices(rows, priority_limit)
+    ordered_rows = order_annotation_rows(rows, priority_indices)
     output_html.parent.mkdir(parents=True, exist_ok=True)
-    output_html.write_text(render_annotation_html(rows, output_html=output_html, title=title), encoding="utf-8")
+    output_html.write_text(render_annotation_html(ordered_rows, output_html=output_html, title=title), encoding="utf-8")
     return {
         "status": "ready" if rows else "empty",
         "annotation_csv": display_path(annotation_csv),
         "output_html": display_path(output_html),
         "rows": len(rows),
+        "priority_limit": priority_limit,
+        "priority_rows": len(priority_indices),
     }
