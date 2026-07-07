@@ -14,6 +14,7 @@ from src.core.paths import configure_environment, model_path, project_path
 from src.weapon_training import (
     build_dataloaders,
     load_labels,
+    load_initial_classifier,
     summarize_dataset,
     summary_as_json,
     train_classifier,
@@ -34,6 +35,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "mps", "cuda"])
     parser.add_argument("--pretrained", action="store_true", help="Use torchvision ResNet18 ImageNet weights.")
+    parser.add_argument(
+        "--initial-model",
+        help="Fine-tune from an existing full .pth model. The output class count must match the dataset classes.",
+    )
     parser.add_argument("--learning-rate", type=float, default=0.001)
     parser.add_argument("--momentum", type=float, default=0.9)
     parser.add_argument("--step-size", type=int, default=7)
@@ -55,6 +60,7 @@ def main() -> int:
     labels_path = project_path(args.labels)
     output_path = project_path(args.output)
     metrics_path = project_path(args.metrics)
+    initial_model_path = project_path(args.initial_model) if args.initial_model else None
     summary = summarize_dataset(dataset, labels_path, model_path("main_weapons_classification_weight.pth"))
 
     if args.json:
@@ -69,6 +75,8 @@ def main() -> int:
         print(f"epochs: {args.epochs}")
         print(f"batch size: {args.batch_size}")
         print(f"device: {args.device}")
+        if initial_model_path:
+            print(f"initial model: {initial_model_path}")
         print(f"output: {output_path}")
         print(f"metrics: {metrics_path}")
 
@@ -89,6 +97,13 @@ def main() -> int:
     elif load_labels(labels_path) != class_names:
         print("error: label list does not match dataset class order; rerun with --write-labels after reviewing.")
         return 1
+
+    if initial_model_path:
+        try:
+            load_initial_classifier(initial_model_path, len(class_names))
+        except ValueError as exc:
+            print(f"error: {exc}")
+            return 1
 
     if args.dry_run:
         print("status: dry run only; no training executed")
@@ -112,6 +127,7 @@ def main() -> int:
         args.num_workers,
         args.seed,
         args.max_samples_per_class,
+        initial_model_path,
     )
     print(f"wrote model: {output_path}")
     print(f"wrote metrics: {metrics_path}")

@@ -58,12 +58,15 @@ python scripts/train_weapon_classifier.py \
   --epochs 25 \
   --batch-size 32 \
   --device auto \
+  --initial-model models/main_weapons_classification_weight.pth \
   --write-labels
 ```
 
 The training CLI keeps the existing runtime contract: it writes a full
 TorchVision ResNet18 model object to `models/main_weapons_classification_weight.pth`
 and writes the class order to `main_weapon_list.txt`.
+`--initial-model` fine-tunes from an existing full `.pth` model when its output
+class count matches the current dataset class count.
 
 ## Synthetic Weapon Dataset Generation
 

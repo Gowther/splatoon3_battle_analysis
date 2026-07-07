@@ -151,10 +151,12 @@ python scripts/train_weapon_classifier.py \
   --epochs 25 \
   --batch-size 32 \
   --device auto \
-  --pretrained
+  --initial-model models/main_weapons_classification_weight.pth
 ```
 
-注意：当前训练 CLI 不会从现有 `.pth` checkpoint 继续训练，也没有 resume/fine-tune 参数。“接着现在的模型添加新训练数据”在当前项目里实际是：把新图片加入 `main_training_dataset/`，重新训练一份候选模型，再用验证结果决定是否替换 canonical 权重。
+如果要从 ImageNet 初始化而不是当前项目模型初始化，改用 `--pretrained`。
+
+注意：`--initial-model` 是权重初始化/fine-tune 入口，不是完整 checkpoint resume。它会加载已有 `.pth` 模型权重，并要求输出类别数和当前数据集类别数一致；它不会恢复 optimizer 或 scheduler 状态。
 
 ### 5. 评估候选模型
 
@@ -363,7 +365,7 @@ python scripts/report_model_data_readiness.py \
 主要风险还在这些地方：
 
 - `src/run_analysis.py` 仍然是重业务入口，YOLO/OCR/weapon/runtime 状态耦合较重。
-- 训练 CLI 只支持重新训练候选武器分类器，不支持从现有 `.pth` resume/fine-tune。
+- 训练 CLI 支持 `--initial-model` fine-tune，但还不支持恢复 optimizer/scheduler 的完整 checkpoint resume。
 - YOLO/OCR 没有项目级训练流水线，容易回到手动脚本和不可复现实验。
 - 模型晋升流程已有 `config/models.json` 起点，但还没有自动化的候选模型晋升/回滚命令。
 - 热力图配置和输出越来越多，后续会需要更强的配置模板和注册工具。
@@ -371,7 +373,7 @@ python scripts/report_model_data_readiness.py \
 ## 推荐重构顺序
 
 1. 给模型加 registry：记录每个 canonical 权重的路径、用途、来源、训练数据、metrics、替换日期。
-2. 给 `train_weapon_classifier.py` 加 `--resume` 或 `--initial-model`，支持真正的增量 fine-tune。
+2. 给 `train_weapon_classifier.py` 增加完整 checkpoint `--resume`，恢复 optimizer/scheduler 状态。
 3. 固化候选模型目录：例如 `outputs/model_experiments/<experiment_id>/`，里面统一放 weights、metrics、manifest、baseline。
 4. 给武器训练集生成 dataset manifest，记录每个类别样本数、来源批次、人工/合成标记。
 5. 如果确定要训 YOLO/OCR，先写项目级 CLI 和数据规范，再碰 `models/the_model.pt` 等 canonical 权重。

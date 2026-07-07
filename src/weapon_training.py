@@ -154,6 +154,16 @@ def build_resnet18_classifier(num_classes: int, pretrained: bool = False, dropou
     return model
 
 
+def load_initial_classifier(path: Path, expected_classes: int) -> nn.Module:
+    model = load_torch_model(path, "cpu")
+    output_classes = model_output_count(model)
+    if output_classes != expected_classes:
+        raise ValueError(
+            f"Initial model output classes ({output_classes}) do not match dataset classes ({expected_classes})."
+        )
+    return model
+
+
 def training_transform(augment: bool = True) -> transforms.Compose:
     steps: list[Any] = [transforms.Resize((64, 64))]
     if augment:
@@ -302,6 +312,7 @@ def train_classifier(
     num_workers: int,
     seed: int,
     max_samples_per_class: int | None = None,
+    initial_model_path: Path | None = None,
 ) -> dict[str, Any]:
     torch.manual_seed(seed)
     loaders, sizes, class_names, splits = build_dataloaders(
@@ -317,7 +328,12 @@ def train_classifier(
         raise RuntimeError("No training images found.")
 
     device = choose_training_device(device_name)
-    model = build_resnet18_classifier(len(class_names), pretrained=pretrained).to(device)
+    if initial_model_path:
+        model = load_initial_classifier(initial_model_path, len(class_names)).to(device)
+        initialization = "initial_model"
+    else:
+        model = build_resnet18_classifier(len(class_names), pretrained=pretrained).to(device)
+        initialization = "pretrained_resnet18" if pretrained else "resnet18"
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
@@ -351,6 +367,8 @@ def train_classifier(
         "dataset": str(dataset_root),
         "output": str(output_path),
         "labels": str(labels_path),
+        "initialization": initialization,
+        "initial_model": str(initial_model_path) if initial_model_path else "",
         "classes": class_names,
         "class_count": len(class_names),
         "sizes": sizes,
