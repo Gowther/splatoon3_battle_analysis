@@ -13,6 +13,8 @@ class ModelDataReadinessTests(unittest.TestCase):
             validation_suite={"status": "passed"},
             runtime_benchmarks={"status": "ready"},
             dataset_governance={"status": "passed"},
+            model_registry={"status": "passed"},
+            model_training_plan={"status": "needs_data"},
             model_experiment_plan={"status": "planned", "summary": {"high_priority": 1}},
         )
 
@@ -26,11 +28,26 @@ class ModelDataReadinessTests(unittest.TestCase):
             validation_suite={"status": "passed"},
             runtime_benchmarks={"status": "ready"},
             dataset_governance={"status": "passed"},
+            model_registry={"status": "passed"},
+            model_training_plan={"status": "ready"},
             model_experiment_plan={"status": "planned", "summary": {}},
         )
 
         self.assertEqual(report["status"], "ready_for_model_data_experiments")
         self.assertEqual(report["blockers"], [])
+
+    def test_model_registry_blocks_when_missing(self) -> None:
+        report = build_model_data_readiness_report(
+            annotation_round={"progress": {"labeled_rows": 30}},
+            parameter_experiments={"status": "planned"},
+            validation_suite={"status": "passed"},
+            runtime_benchmarks={"status": "ready"},
+            dataset_governance={"status": "passed"},
+            model_training_plan={"status": "ready"},
+        )
+
+        self.assertEqual(report["status"], "needs_data")
+        self.assertTrue(any(item["area"] == "model_registry" for item in report["blockers"]))
 
     def test_render_markdown_lists_blockers(self) -> None:
         markdown = render_markdown(build_model_data_readiness_report(annotation_round={"progress": {"labeled_rows": 0}}))

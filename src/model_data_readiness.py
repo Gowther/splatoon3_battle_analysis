@@ -28,6 +28,8 @@ def build_model_data_readiness_report(
     runtime_benchmarks: dict[str, Any] | None = None,
     validation_suite: dict[str, Any] | None = None,
     dataset_governance: dict[str, Any] | None = None,
+    model_registry: dict[str, Any] | None = None,
+    model_training_plan: dict[str, Any] | None = None,
     model_experiment_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     blockers: list[dict[str, str]] = []
@@ -49,6 +51,10 @@ def build_model_data_readiness_report(
         warnings.append({"area": "runtime", "detail": f"Runtime benchmark status is {report_status(runtime_benchmarks)}."})
     if report_status(dataset_governance) not in {"passed"}:
         warnings.append({"area": "dataset_governance", "detail": f"Dataset governance status is {report_status(dataset_governance)}."})
+    if report_status(model_registry) not in {"passed"}:
+        blockers.append({"area": "model_registry", "detail": f"Model registry status is {report_status(model_registry)}."})
+    if report_status(model_training_plan) not in {"ready"}:
+        warnings.append({"area": "model_training_plan", "detail": f"Model training plan status is {report_status(model_training_plan)}."})
 
     experiment_summary = (model_experiment_plan or {}).get("summary", {})
     actions = [
@@ -67,6 +73,8 @@ def build_model_data_readiness_report(
             "runtime_benchmarks": report_status(runtime_benchmarks),
             "validation_suite": report_status(validation_suite),
             "dataset_governance": report_status(dataset_governance),
+            "model_registry": report_status(model_registry),
+            "model_training_plan": report_status(model_training_plan),
             "model_experiment_plan": report_status(model_experiment_plan),
         },
         "heatmap_labels": {

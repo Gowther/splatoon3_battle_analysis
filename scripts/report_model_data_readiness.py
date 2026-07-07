@@ -18,6 +18,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runtime-benchmarks", type=Path, default=ROOT / "outputs" / "runtime" / "runtime_benchmarks.json")
     parser.add_argument("--validation-suite", type=Path, default=ROOT / "outputs" / "validation_suite.json")
     parser.add_argument("--dataset-governance", type=Path, default=ROOT / "outputs" / "dataset_governance.json")
+    parser.add_argument("--model-registry", type=Path, default=ROOT / "outputs" / "model_registry.json")
+    parser.add_argument("--model-training-plan", type=Path, default=ROOT / "outputs" / "model_training_plan.json")
     parser.add_argument("--model-experiment-plan", type=Path, default=ROOT / "outputs" / "model_experiment_plan.json")
     parser.add_argument("--output", type=Path, default=ROOT / "outputs" / "model_data_readiness.md")
     parser.add_argument("--json-output", type=Path, default=ROOT / "outputs" / "model_data_readiness.json")
@@ -32,6 +34,8 @@ def main() -> int:
         runtime_benchmarks=load_optional_json(args.runtime_benchmarks),
         validation_suite=load_optional_json(args.validation_suite),
         dataset_governance=load_optional_json(args.dataset_governance),
+        model_registry=load_optional_json(args.model_registry),
+        model_training_plan=load_optional_json(args.model_training_plan),
         model_experiment_plan=load_optional_json(args.model_experiment_plan),
     )
     args.output.expanduser().parent.mkdir(parents=True, exist_ok=True)

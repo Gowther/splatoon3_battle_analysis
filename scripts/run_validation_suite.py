@@ -79,6 +79,10 @@ def main() -> int:
     evaluation_dir = work_dir / "evaluation"
     heatmap_comparison_md = work_dir / "heatmap_comparison.md"
     heatmap_comparison_json = work_dir / "heatmap_comparison.json"
+    model_registry_md = work_dir / "model_registry.md"
+    model_registry_json = work_dir / "model_registry.json"
+    model_training_plan_md = work_dir / "model_training_plan.md"
+    model_training_plan_json = work_dir / "model_training_plan.json"
     model_error_md = work_dir / "model_error_report_smoothed.md"
     model_error_json = work_dir / "model_error_report_smoothed.json"
     validation_samples_md = work_dir / "validation_samples.md"
@@ -94,6 +98,33 @@ def main() -> int:
     steps.append(run_step("unit tests", [python, "-m", "unittest", "discover", "-s", "tests", "-q"]))
     steps.append(run_step("registry validation", [python, "scripts/validate_data_registry.py", "--strict"]))
     steps.append(run_step("heatmap config validation", [python, "scripts/validate_heatmap_configs.py", "--strict"]))
+    steps.append(
+        run_step(
+            "model registry",
+            [
+                python,
+                "scripts/report_model_registry.py",
+                "--output",
+                model_registry_md,
+                "--json-output",
+                model_registry_json,
+                "--strict",
+            ],
+        )
+    )
+    steps.append(
+        run_step(
+            "model training plan",
+            [
+                python,
+                "scripts/plan_model_training.py",
+                "--output",
+                model_training_plan_md,
+                "--json-output",
+                model_training_plan_json,
+            ],
+        )
+    )
 
     evaluation_cmd: list[object] = [python, "scripts/evaluate_matches.py", "--strict", "--output-dir", evaluation_dir]
     if args.run_analysis:

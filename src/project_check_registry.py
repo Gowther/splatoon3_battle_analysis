@@ -173,6 +173,29 @@ def tooling_smoke_steps(python: Path, work_dir: Path, match_video: str, device: 
             ],
         ),
         CheckStep(
+            "model registry report helper",
+            [
+                python,
+                "scripts/report_model_registry.py",
+                "--output",
+                work_dir / "model_registry.md",
+                "--json-output",
+                work_dir / "model_registry.json",
+                "--strict",
+            ],
+        ),
+        CheckStep(
+            "model training plan helper",
+            [
+                python,
+                "scripts/plan_model_training.py",
+                "--output",
+                work_dir / "model_training_plan.md",
+                "--json-output",
+                work_dir / "model_training_plan.json",
+            ],
+        ),
+        CheckStep(
             "heatmap quality loop helper",
             [
                 python,
@@ -401,6 +424,10 @@ def experiment_delivery_steps(python: Path, root: Path, work_dir: Path) -> list[
                 work_dir / "runtime_benchmarks.json",
                 "--dataset-governance",
                 work_dir / "dataset_governance.json",
+                "--model-registry",
+                work_dir / "model_registry.json",
+                "--model-training-plan",
+                work_dir / "model_training_plan.json",
                 "--model-experiment-plan",
                 work_dir / "model_experiment_plan.json",
                 "--output",
