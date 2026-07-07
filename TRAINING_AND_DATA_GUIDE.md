@@ -279,6 +279,18 @@ python scripts/evaluate_matches.py --only match_12_10_150 --run-analysis --stric
 3. 人工填写真实 `x/y`。
 4. 跑参数实验和质量报告。
 
+新增 heatmap 样本时，先从 registry 生成一份小型 override config：
+
+```bash
+python scripts/create_heatmap_config.py \
+  --match-id f_match_6 \
+  --stop-seconds 330 \
+  --duration-seconds 368.6 \
+  --output outputs/heatmap_config_templates/config_f_match_6.yaml
+```
+
+确认 config 能跑通后，再把它晋升到 `src/heatmap/config_f_match_6.yaml` 并更新 `config/data_registry.json`。
+
 第一轮标注包：
 
 ```bash

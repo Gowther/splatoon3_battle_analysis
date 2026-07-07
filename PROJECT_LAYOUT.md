@@ -19,6 +19,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/heatmap/` | Supported | Heatmap calibration, player marker detection, trajectory quality, annotation, and anomaly helpers. |
 | `src/heatmap/comparison_report.py` | Supported | Cross-match heatmap quality and anomaly comparison reporting. |
 | `src/heatmap/annotation_ui.py` | Supported | Static HTML helper generation for manual heatmap point labels. |
+| `src/heatmap/config_template.py` | Supported | Registry-driven heatmap config override generation helpers. |
 | `src/heatmap/parameter_experiments.py` | Supported | Heatmap tracker parameter experiment planning and candidate config generation. |
 | `src/heatmap/productization.py` | Supported | Productization readiness and milestone reporting for heatmap outputs. |
 | `src/heatmap/stage_coordinates.py` | Supported | ROI-to-stage normalized coordinate helpers for heatmap points and tracks. |
