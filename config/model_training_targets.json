@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "description": "Training data requirements for model families that do not yet have full project-level training CLIs.",
+  "targets": [
+    {
+      "id": "ui_detector_yolo",
+      "area": "ui_detection",
+      "model_id": "ui_detector_yolov5",
+      "dataset_root": "yolov5",
+      "required_paths": [
+        "yolov5/train/images",
+        "yolov5/train/labels",
+        "yolov5/valid/images",
+        "yolov5/valid/labels",
+        "legacy/yolov5_training/data.yaml"
+      ],
+      "candidate_output_dir": "outputs/model_training/ui_detector_yolo",
+      "baseline_model": "models/the_model.pt",
+      "candidate_command": "python yolov5/train.py --img 640 --batch 16 --epochs 50 --data legacy/yolov5_training/data.yaml --weights models/the_model.pt --project outputs/model_training/ui_detector_yolo --name candidate",
+      "promotion_gate": "python scripts/run_validation_suite.py",
+      "notes": "Current detector remains the control. Promote only after fixed validation and runtime reports improve."
+    },
+    {
+      "id": "count_ocr_yolo",
+      "area": "count_ocr",
+      "model_id": "count_ocr",
+      "dataset_root": "outputs/model_training/count_ocr_dataset",
+      "required_paths": [
+        "outputs/model_training/count_ocr_dataset/images/train",
+        "outputs/model_training/count_ocr_dataset/images/val",
+        "outputs/model_training/count_ocr_dataset/labels/train",
+        "outputs/model_training/count_ocr_dataset/labels/val",
+        "outputs/model_training/count_ocr_dataset/data.yaml"
+      ],
+      "candidate_output_dir": "outputs/model_training/count_ocr_yolo",
+      "baseline_model": "models/ocr_model.pt",
+      "candidate_command": "python yolov5/train.py --img 320 --batch 16 --epochs 50 --data outputs/model_training/count_ocr_dataset/data.yaml --weights models/ocr_model.pt --project outputs/model_training/count_ocr_yolo --name candidate",
+      "promotion_gate": "python scripts/report_model_errors.py --evaluation-results outputs/validation_suite/evaluation/evaluation_results.json --output outputs/model_errors.md",
+      "notes": "Build this only after count OCR crops and labels are curated from fixed validation windows."
+    },
+    {
+      "id": "message_ocr_yolo",
+      "area": "message_ocr",
+      "model_id": "message_ocr",
+      "dataset_root": "outputs/model_training/message_ocr_dataset",
+      "required_paths": [
+        "outputs/model_training/message_ocr_dataset/images/train",
+        "outputs/model_training/message_ocr_dataset/images/val",
+        "outputs/model_training/message_ocr_dataset/labels/train",
+        "outputs/model_training/message_ocr_dataset/labels/val",
+        "outputs/model_training/message_ocr_dataset/data.yaml"
+      ],
+      "candidate_output_dir": "outputs/model_training/message_ocr_yolo",
+      "baseline_model": "models/message_ocr_model.pt",
+      "candidate_command": "python yolov5/train.py --img 320 --batch 16 --epochs 50 --data outputs/model_training/message_ocr_dataset/data.yaml --weights models/message_ocr_model.pt --project outputs/model_training/message_ocr_yolo --name candidate",
+      "promotion_gate": "python scripts/report_model_errors.py --evaluation-results outputs/validation_suite/evaluation/evaluation_results.json --output outputs/model_errors.md",
+      "notes": "Message OCR is conservative by default; train only when manually labeled message samples are needed downstream."
+    }
+  ]
+}

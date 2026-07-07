@@ -335,11 +335,22 @@ python scripts/report_model_data_readiness.py \
 
 如果确实要探索 YOLO 训练，建议作为独立实验处理：
 
-1. 数据放在 `.gitignore` 已忽略的 `yolov5/train/`、`yolov5/valid/`、`yolov5/test/`。
-2. YOLO dataset yaml 放在 `outputs/yolo_experiments/<experiment_id>/data.yaml` 或实验目录里。
-3. 不要直接覆盖 `models/the_model.pt`。
-4. 先跑 `report_model_benchmark_baseline.py`、`report_model_errors.py`、`run_validation_suite.py` 保存现状。
-5. 训练命令和结果写入 `write_experiment_manifest.py`。
+先生成训练规划报告：
+
+```bash
+python scripts/plan_model_training.py \
+  --output outputs/model_training_plan.md \
+  --json-output outputs/model_training_plan.json
+```
+
+然后按报告补齐数据目录。UI detector 的历史 YOLO 数据可以放在 `.gitignore` 已忽略的 `yolov5/train/`、`yolov5/valid/`、`yolov5/test/`；新的 count/message OCR 数据建议先放在 `outputs/model_training/*_dataset/`。
+
+规则：
+
+1. 不要直接覆盖 `models/the_model.pt`、`models/ocr_model.pt` 或 `models/message_ocr_model.pt`。
+2. 先跑 `report_model_benchmark_baseline.py`、`report_model_errors.py`、`run_validation_suite.py` 保存现状。
+3. 训练命令和结果写入 `write_experiment_manifest.py`。
+4. 只有当 `plan_model_training.py` 从 `needs_data` 变为 `ready`，才进入实际训练。
 
 当前 `yolov5/` 更像 vendor/runtime 边界，不适合继续塞项目业务逻辑。等 YOLO/OCR 训练变成明确目标后，应该新增 `scripts/train_ui_detector.py` 或类似包装，而不是让用户直接记 upstream YOLO 命令。
 

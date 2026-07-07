@@ -29,6 +29,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/model_error_report.py` | Supported | CSV-level model/OCR risk signal reporting. |
 | `src/model_experiments.py` | Supported | Model replacement experiment planning and prioritization. |
 | `src/model_registry.py` | Supported | Canonical runtime model registry validation and reporting. |
+| `src/model_training_plan.py` | Supported | Detector/OCR training target data readiness planning. |
 | `src/model_data_readiness.py` | Supported | Readiness gate before running the next data/model experiment phase. |
 | `src/model_benchmark_baseline.py` | Supported | Snapshot current evaluation/error/heatmap reports as a benchmark baseline. |
 | `src/dataset_governance.py` | Supported | Dataset, label, and registry metadata governance reporting. |
