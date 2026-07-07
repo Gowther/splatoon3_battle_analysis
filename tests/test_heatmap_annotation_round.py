@@ -5,7 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.heatmap.annotation_round import annotation_priority_tasks, annotation_progress, evaluate_progress_gates, resolve_round
+from src.heatmap.annotation_round import (
+    annotation_priority_tasks,
+    annotation_progress,
+    evaluate_progress_gates,
+    render_markdown,
+    resolve_round,
+)
 
 
 def write_rows(path: Path, rows: list[dict[str, str]]) -> None:
@@ -114,6 +120,29 @@ class HeatmapAnnotationRoundTests(unittest.TestCase):
             tasks = annotation_priority_tasks(path)
 
         self.assertEqual([task["annotation_id"] for task in tasks], ["jump", "new"])
+
+    def test_render_markdown_includes_annotation_ui_summary(self) -> None:
+        markdown = render_markdown(
+            {
+                "status": "needs_labels",
+                "round": {"id": "r1", "matches": [], "frames_per_match": 1},
+                "progress": {},
+                "progress_checks": {},
+                "priority_tasks": [],
+                "annotation_ui": {
+                    "status": "ready",
+                    "output_html": "outputs/round/annotation_ui.html",
+                    "rows": 12,
+                    "priority_rows": 4,
+                    "priority_limit": 4,
+                },
+                "quality_loop": {},
+            }
+        )
+
+        self.assertIn("## Annotation UI", markdown)
+        self.assertIn("outputs/round/annotation_ui.html", markdown)
+        self.assertIn("priority_rows: 4", markdown)
 
 
 if __name__ == "__main__":

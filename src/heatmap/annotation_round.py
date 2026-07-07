@@ -293,6 +293,21 @@ def render_markdown(report: dict[str, Any]) -> str:
     else:
         lines.append("| none |  |  |  |  |  |")
 
+    annotation_ui = report.get("annotation_ui", {})
+    if annotation_ui:
+        lines.extend(
+            [
+                "",
+                "## Annotation UI",
+                "",
+                f"- status: `{annotation_ui.get('status', '')}`",
+                f"- output_html: `{annotation_ui.get('output_html', '')}`",
+                f"- rows: {annotation_ui.get('rows', '')}",
+                f"- priority_rows: {annotation_ui.get('priority_rows', '')}",
+                f"- priority_limit: {annotation_ui.get('priority_limit', '')}",
+            ]
+        )
+
     quality = report.get("quality_loop", {})
     lines.extend(
         [
