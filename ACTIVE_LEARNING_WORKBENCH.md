@@ -2,6 +2,8 @@
 
 这份文档说明本地 Web 工作台如何把“新增素材 -> 自动分析 -> 失败样本 -> 人/LLM 标注 -> 训练集 -> 训练/评估 -> 模型提升”串成闭环。
 
+日常操作手册见 [WEB_WORKBENCH_USER_MANUAL.md](WEB_WORKBENCH_USER_MANUAL.md)。
+
 ## 启动
 
 ```bash
