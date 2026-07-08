@@ -82,3 +82,40 @@ Goal 1 只回答“哪个状态栏槽位在什么时间死亡”。它不会假�
 - `team_1/team_2` 对应真实黄队、蓝队还是玩家视角队伍。
 
 这些会在 Goal 2-6 通过 OCR、规则归因、Web 标注和评估逐步补上。
+
+## Goal 2: 导出死亡窗口素材
+
+Goal 2 新增命令：
+
+```bash
+python scripts/export_death_event_windows.py \
+  --events-csv outputs/death_events/example_death_events.csv \
+  --video footages/example.mp4 \
+  --updated-events-csv outputs/death_events/example_death_events_with_assets.csv
+```
+
+默认输出：
+
+- `outputs/death_events/assets/death_event_assets.csv`
+- `outputs/death_events/assets/death_event_assets.json`
+- 每个事件一个独立素材目录，目录中包含 `frames/*.jpg`
+
+默认只导出复核帧，不强制导出 MP4 片段。需要短片段时加：
+
+```bash
+python scripts/export_death_event_windows.py \
+  --events-csv outputs/death_events/example_death_events.csv \
+  --video footages/example.mp4 \
+  --write-clips
+```
+
+可以调整复核帧相对死亡时间的采样点：
+
+```bash
+python scripts/export_death_event_windows.py \
+  --events-csv outputs/death_events/example_death_events.csv \
+  --video footages/example.mp4 \
+  --frame-offsets -4,-2,0,1.5,3
+```
+
+导出的 manifest 是后续 death screen OCR、Web 标注、归因和自动剪辑的共同素材入口。
