@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,16 +17,23 @@ if str(ROOT) not in sys.path:
 from src.active_learning_workbench import (
     DEFAULT_LLM_REVIEWS_PATH,
     DEFAULT_STAGING_PATH,
+    auto_record_llm_reviews,
     apply_staging_annotations,
+    build_automation_plan,
     build_llm_review_pack,
     build_workbench_state,
+    finish_job_record,
     load_candidate_queue,
+    load_jobs,
     load_llm_reviews,
     load_staging,
     media_type_for_path,
+    prefill_heatmap_staging,
     record_llm_review,
+    run_automation_pipeline,
     run_workbench_action,
     safe_project_file,
+    start_job_record,
     upsert_staging_annotation,
 )
 
@@ -236,6 +244,10 @@ APP_HTML = """<!doctype html>
         <div class="panel" style="padding:10px;">
           <h2 data-i18n="section.actions">操作</h2>
           <div class="toolbar">
+            <button id="automationDryRun" data-i18n="button.automation_dry_run">自动预演</button>
+            <button id="automationRun" class="primary" data-i18n="button.automation_run">自动推进</button>
+            <button id="autoReviewButton" data-i18n="button.auto_review">规则审阅</button>
+            <button id="heatmapPrefillButton" data-i18n="button.heatmap_prefill">预填热力图</button>
             <button data-action="refresh_training_candidates" data-i18n="action.refresh_training_candidates">刷新候选样本</button>
             <button data-action="validate_training_datasets" data-i18n="action.validate_training_datasets">验证训练集</button>
             <button data-action="refresh_model_data_readiness" data-i18n="action.refresh_model_data_readiness">刷新就绪状态</button>
@@ -319,6 +331,10 @@ const I18N = {
     "button.clear": "清空",
     "button.skip": "跳过",
     "button.llm_pack": "生成 LLM 审阅包",
+    "button.automation_dry_run": "自动预演",
+    "button.automation_run": "自动推进",
+    "button.auto_review": "规则审阅",
+    "button.heatmap_prefill": "预填热力图",
     "button.dry_run": "预演",
     "button.apply": "应用",
     "button.use": "使用",
@@ -332,6 +348,7 @@ const I18N = {
     "action.promotion_plan": "提升计划",
     "action.promotion_apply": "应用提升",
     "message.running": "正在运行",
+    "message.job_started": "后台任务已启动",
     "message.llm_prefix": "LLM 建议",
     "confirm.training": "要开始训练这个目标吗？",
     "confirm.promotion": "要把候选模型应用到登记的正式模型路径吗？",
@@ -396,6 +413,10 @@ const I18N = {
     "button.clear": "Clear",
     "button.skip": "Skip",
     "button.llm_pack": "Build LLM Pack",
+    "button.automation_dry_run": "Automation Dry Run",
+    "button.automation_run": "Run Automation",
+    "button.auto_review": "Rule Review",
+    "button.heatmap_prefill": "Prefill Heatmap",
     "button.dry_run": "Dry Run",
     "button.apply": "Apply",
     "button.use": "Use",
@@ -409,6 +430,7 @@ const I18N = {
     "action.promotion_plan": "Promotion Plan",
     "action.promotion_apply": "Apply Promotion",
     "message.running": "running",
+    "message.job_started": "background job started",
     "message.llm_prefix": "LLM",
     "confirm.training": "Start training for this target?",
     "confirm.promotion": "Apply candidate model to the registered path?",
@@ -543,13 +565,14 @@ function selectCandidate(id) {
   state.boxes = [];
   state.point = null;
   const staged = state.selected.staging || {};
-  const annotation = staged.annotation || {};
+  const preannotation = state.selected.preannotation || {};
+  const annotation = staged.annotation || preannotation.annotation || {};
   if (Array.isArray(annotation.boxes)) state.boxes = annotation.boxes.map(item => ({ ...item }));
   if (annotation.point) state.point = { ...annotation.point };
   document.getElementById("textInput").value = annotation.text || "";
   document.getElementById("notesInput").value = annotation.notes || "";
   document.getElementById("splitInput").value = staged.split || "train";
-  document.getElementById("annotationStatus").value = staged.status === "draft" ? "draft" : "done";
+  document.getElementById("annotationStatus").value = staged.status === "done" ? "done" : "draft";
   const frame = state.selected.frame_path || state.selected.preview_path;
   if (frame) {
     const image = new Image();
@@ -565,11 +588,15 @@ function selectCandidate(id) {
 function renderCandidateHeader() {
   const item = state.selected;
   document.getElementById("candidateTitle").textContent = item ? item.id : t("candidate.empty");
-  document.getElementById("candidateMeta").textContent = item ? `${item.target} | ${item.reason} | ${item.frame_path || item.preview_path || ""}` : "";
+  document.getElementById("candidateMeta").textContent = item ? `${targetLabel(item.target)} | ${item.reason} | priority ${item.priority_score ?? ""} | duplicates ${item.duplicate_count ?? 1} | ${item.frame_path || item.preview_path || ""}` : "";
   document.getElementById("candidateStatus").className = cls(item ? item.status : "idle");
   document.getElementById("candidateStatus").textContent = statusLabel(item ? item.status : "idle");
   const review = item && item.llm_review ? item.llm_review : {};
-  document.getElementById("annotationHint").textContent = review.suggestion ? `${t("message.llm_prefix")}: ${review.suggestion} (${review.confidence ?? ""})` : "";
+  const pre = item && item.preannotation ? item.preannotation : {};
+  const hints = [];
+  if (pre.status === "ready") hints.push(`preannotation: ${pre.source} (${pre.confidence ?? ""})`);
+  if (review.suggestion) hints.push(`${t("message.llm_prefix")}: ${review.suggestion} (${review.confidence ?? ""})`);
+  document.getElementById("annotationHint").textContent = hints.join(" | ");
 }
 function fitCanvas(image) {
   const maxWidth = 980;
@@ -673,7 +700,7 @@ document.getElementById("saveAnnotation").onclick = async () => {
     text: document.getElementById("textInput").value,
     notes: document.getElementById("notesInput").value
   };
-  await postJson("/api/annotation", {
+  const saved = await postJson("/api/annotation", {
     id: state.selected.id,
     target: state.selected.target,
     annotation_type: state.selected.annotation_type,
@@ -682,6 +709,11 @@ document.getElementById("saveAnnotation").onclick = async () => {
     candidate: state.selected,
     annotation
   });
+  const output = { saved };
+  if (saved.status === "done") {
+    output.dry_run = await postJson("/api/apply-staging", { dry_run: true });
+  }
+  document.getElementById("actionOutput").textContent = JSON.stringify(output, null, 2);
   await loadAll();
 };
 document.getElementById("skipCandidate").onclick = async () => {
@@ -699,6 +731,13 @@ document.getElementById("skipCandidate").onclick = async () => {
 async function runAction(action_id, payload = {}) {
   document.getElementById("actionOutput").textContent = `${t("message.running")} ${action_id}`;
   try {
+    const definition = (state.app.actions || []).find(item => item.id === action_id) || {};
+    if (definition.long_running) {
+      const job = await postJson("/api/job", { action_id, payload });
+      document.getElementById("actionOutput").textContent = `${t("message.job_started")}\\n` + JSON.stringify(job, null, 2);
+      await loadAll();
+      return;
+    }
     const result = await postJson("/api/action", { action_id, payload });
     document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
     await loadAll();
@@ -734,6 +773,26 @@ document.getElementById("llmPackButton").onclick = async () => {
   const result = await postJson("/api/llm-review-pack", { limit: 30 });
   document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
 };
+document.getElementById("automationDryRun").onclick = async () => {
+  const result = await postJson("/api/automation-run", { dry_run: true, include_long: false, max_steps: 8 });
+  document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
+  await loadAll();
+};
+document.getElementById("automationRun").onclick = async () => {
+  const result = await postJson("/api/automation-run", { dry_run: false, include_long: false, max_steps: 8 });
+  document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
+  await loadAll();
+};
+document.getElementById("autoReviewButton").onclick = async () => {
+  const result = await postJson("/api/llm-review-auto", { limit: 50 });
+  document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
+  await loadAll();
+};
+document.getElementById("heatmapPrefillButton").onclick = async () => {
+  const result = await postJson("/api/heatmap-prefill", { limit: 30, status: "draft" });
+  document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
+  await loadAll();
+};
 document.getElementById("applyDryRun").onclick = async () => {
   const result = await postJson("/api/apply-staging", { dry_run: true });
   document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
@@ -757,6 +816,14 @@ loadAll().catch(error => { document.getElementById("actionOutput").textContent =
 </body>
 </html>
 """
+
+
+def run_background_job(job: dict, action_id: str, payload: dict) -> None:
+    try:
+        result = run_workbench_action(action_id, payload)
+    except Exception as exc:  # noqa: BLE001 - local tool should persist job failures.
+        result = {"status": "failed", "error": str(exc)}
+    finish_job_record(str(job["id"]), result)
 
 
 def parse_args() -> argparse.Namespace:
@@ -801,6 +868,10 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self.send_json(load_staging(DEFAULT_STAGING_PATH))
             elif parsed.path == "/api/llm-reviews":
                 self.send_json(load_llm_reviews(DEFAULT_LLM_REVIEWS_PATH))
+            elif parsed.path == "/api/automation-plan":
+                self.send_json(build_automation_plan())
+            elif parsed.path == "/api/jobs":
+                self.send_json(load_jobs())
             elif parsed.path == "/api/image":
                 query = parse_qs(parsed.query)
                 image_path = safe_project_file(query.get("path", [""])[0])
@@ -830,6 +901,29 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self.send_json(build_llm_review_pack(limit=int(payload.get("limit", 30))))
             elif parsed.path == "/api/llm-review":
                 self.send_json(record_llm_review(str(payload.get("id", "")), payload.get("review", {})))
+            elif parsed.path == "/api/llm-review-auto":
+                self.send_json(auto_record_llm_reviews(limit=int(payload.get("limit", 30))))
+            elif parsed.path == "/api/heatmap-prefill":
+                self.send_json(
+                    prefill_heatmap_staging(
+                        limit=int(payload.get("limit", 30)),
+                        status=str(payload.get("status", "draft")),
+                    )
+                )
+            elif parsed.path == "/api/automation-run":
+                self.send_json(
+                    run_automation_pipeline(
+                        include_long=bool(payload.get("include_long", False)),
+                        max_steps=int(payload.get("max_steps", 8)),
+                        dry_run=bool(payload.get("dry_run", False)),
+                    )
+                )
+            elif parsed.path == "/api/job":
+                action_id = str(payload.get("action_id", ""))
+                action_payload = payload.get("payload", {}) if isinstance(payload.get("payload", {}), dict) else {}
+                job = start_job_record(action_id, action_payload)
+                threading.Thread(target=run_background_job, args=(job, action_id, action_payload), daemon=True).start()
+                self.send_json(job)
             else:
                 self.send_error_json("not found", HTTPStatus.NOT_FOUND)
         except Exception as exc:  # noqa: BLE001 - local tool should return useful API errors.

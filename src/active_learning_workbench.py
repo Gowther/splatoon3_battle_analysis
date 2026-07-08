@@ -9,7 +9,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from src.core.paths import ROOT, project_path
 from src.data_registry import load_registry
@@ -19,6 +19,8 @@ DEFAULT_STATE_DIR = ROOT / "outputs" / "active_learning_workbench"
 DEFAULT_STAGING_PATH = DEFAULT_STATE_DIR / "staging_annotations.json"
 DEFAULT_LLM_REVIEWS_PATH = DEFAULT_STATE_DIR / "llm_reviews.json"
 DEFAULT_ACTION_RUNS_PATH = DEFAULT_STATE_DIR / "action_runs.json"
+DEFAULT_AUTOMATION_RUNS_PATH = DEFAULT_STATE_DIR / "automation_runs.json"
+DEFAULT_JOBS_PATH = DEFAULT_STATE_DIR / "jobs.json"
 DEFAULT_CANDIDATE_MANIFEST = ROOT / "outputs" / "training_sample_candidates" / "manifest.json"
 DEFAULT_MODEL_TRAINING_TARGETS = ROOT / "config" / "model_training_targets.json"
 DEFAULT_MODEL_REGISTRY = ROOT / "config" / "models.json"
@@ -148,6 +150,8 @@ class ActionDefinition:
     long_running: bool = False
     label_zh: str = ""
     description_zh: str = ""
+    automation_safe: bool = True
+    human_gate: bool = False
 
 
 ACTION_DEFINITIONS: tuple[ActionDefinition, ...] = (
@@ -202,6 +206,8 @@ ACTION_DEFINITIONS: tuple[ActionDefinition, ...] = (
         long_running=True,
         label_zh="执行训练",
         description_zh="运行指定训练目标的配置命令。",
+        automation_safe=False,
+        human_gate=True,
     ),
     ActionDefinition(
         "run_model_baseline",
@@ -225,8 +231,12 @@ ACTION_DEFINITIONS: tuple[ActionDefinition, ...] = (
         needs_confirmation=True,
         label_zh="应用提升",
         description_zh="把已验证候选模型复制到登记的正式模型路径。",
+        automation_safe=False,
+        human_gate=True,
     ),
 )
+
+ACTION_BY_ID = {definition.id: definition for definition in ACTION_DEFINITIONS}
 
 
 def utc_now() -> str:
@@ -391,6 +401,26 @@ def load_llm_reviews(path: Path = DEFAULT_LLM_REVIEWS_PATH) -> dict[str, Any]:
     return payload
 
 
+def numeric_value(payload: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = payload.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def text_value(payload: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = str(payload.get(key, "")).strip()
+        if value:
+            return value
+    return ""
+
+
 def candidate_annotation_type(target: str) -> str:
     if target == "heatmap_tracker_labels":
         return "heatmap_point"
@@ -401,10 +431,161 @@ def candidate_annotation_type(target: str) -> str:
     return "yolo_box"
 
 
+def build_box_preannotation(raw: dict[str, Any]) -> dict[str, Any] | None:
+    direct = {
+        "x_center": numeric_value(raw, "x_center", "xc", "cx"),
+        "y_center": numeric_value(raw, "y_center", "yc", "cy"),
+        "width": numeric_value(raw, "width", "w"),
+        "height": numeric_value(raw, "height", "h"),
+    }
+    if all(value is not None for value in direct.values()):
+        box = {key: float(value) for key, value in direct.items() if value is not None}
+        box["class_id"] = int(numeric_value(raw, "class_id", "class", "label_id") or 0)
+        class_name = text_value(raw, "class_name", "label", "name")
+        if class_name:
+            box["class_name"] = class_name
+        return box
+
+    x1 = numeric_value(raw, "x1", "xmin", "x_min", "left")
+    y1 = numeric_value(raw, "y1", "ymin", "y_min", "top")
+    x2 = numeric_value(raw, "x2", "xmax", "x_max", "right")
+    y2 = numeric_value(raw, "y2", "ymax", "y_max", "bottom")
+    if None in {x1, y1, x2, y2}:
+        return None
+    image_width = numeric_value(raw, "image_width", "img_width", "width_px")
+    image_height = numeric_value(raw, "image_height", "img_height", "height_px")
+    if image_width and image_height and max(float(x2), float(y2)) > 1:
+        x1, x2 = float(x1) / image_width, float(x2) / image_width
+        y1, y2 = float(y1) / image_height, float(y2) / image_height
+    box = {
+        "class_id": int(numeric_value(raw, "class_id", "class", "label_id") or 0),
+        "x_center": (float(x1) + float(x2)) / 2,
+        "y_center": (float(y1) + float(y2)) / 2,
+        "width": abs(float(x2) - float(x1)),
+        "height": abs(float(y2) - float(y1)),
+    }
+    class_name = text_value(raw, "class_name", "label", "name")
+    if class_name:
+        box["class_name"] = class_name
+    return box
+
+
+def build_candidate_preannotation(candidate: dict[str, Any]) -> dict[str, Any]:
+    raw = candidate.get("raw", {}) if isinstance(candidate.get("raw"), dict) else {}
+    target = str(candidate.get("target", ""))
+    annotation: dict[str, Any] = {}
+    confidence = numeric_value(raw, "confidence", "score", "model_confidence")
+
+    if target == "heatmap_tracker_labels":
+        x = numeric_value(raw, "x", "player_x", "track_x")
+        y = numeric_value(raw, "y", "player_y", "track_y")
+        if x is not None and y is not None:
+            annotation["point"] = {
+                "x": f"{x:.1f}",
+                "y": f"{y:.1f}",
+                "visibility": "visible",
+            }
+    elif candidate.get("annotation_type") in {"yolo_box", "ocr_box_text"}:
+        box = build_box_preannotation(raw)
+        if box:
+            annotation["boxes"] = [box]
+
+    text = text_value(raw, "text", "ocr_text", "value", "recognized_text")
+    if text:
+        annotation["text"] = text
+    note = text_value(raw, "note", "details")
+    if note:
+        annotation["notes"] = note
+
+    label_ready = "point" in annotation or "boxes" in annotation
+    if not annotation:
+        return {
+            "status": "empty",
+            "source": "",
+            "annotation": {},
+            "confidence": confidence,
+            "needs_human": True,
+        }
+    return {
+        "status": "ready" if label_ready else "metadata",
+        "source": "candidate_raw",
+        "annotation": annotation,
+        "confidence": confidence,
+        "needs_human": confidence is None or confidence < 0.85,
+    }
+
+
+def candidate_group_key(candidate: dict[str, Any]) -> str:
+    target = str(candidate.get("target", ""))
+    status = str(candidate.get("status", "todo"))
+    if status not in {"todo", "draft"}:
+        return "|".join([target, status, str(candidate.get("id", ""))])
+    match_id = str(candidate.get("match_id", ""))
+    source_id = str(candidate.get("source_id", ""))
+    reason = str(candidate.get("reason", ""))
+    raw = candidate.get("raw", {}) if isinstance(candidate.get("raw"), dict) else {}
+    elapsed = numeric_value(candidate, "elapsed_time")
+    time_bucket = "unknown"
+    if elapsed is not None:
+        time_bucket = str(int(elapsed // 2))
+    if target == "heatmap_tracker_labels":
+        slot = text_value(raw, "track_slot", "player_id", "team")
+        return "|".join([target, match_id, reason, time_bucket, slot])
+    return "|".join([target, match_id, source_id, reason, time_bucket])
+
+
+def candidate_priority(candidate: dict[str, Any]) -> float:
+    score = 0.0
+    status = str(candidate.get("status", "todo"))
+    if status == "todo":
+        score += 100
+    elif status == "draft":
+        score += 80
+    reason = str(candidate.get("reason", ""))
+    if "missing" in reason:
+        score += 25
+    if "jump" in reason or "large_step" in reason:
+        score += 20
+    if candidate.get("preannotation", {}).get("status") == "ready":
+        score += 15
+    raw = candidate.get("raw", {}) if isinstance(candidate.get("raw"), dict) else {}
+    severity = numeric_value(raw, "severity", "step_distance")
+    if severity is not None:
+        score += min(severity / 100, 25)
+    confidence = numeric_value(raw, "confidence")
+    if confidence is not None:
+        score += max(0, (1 - confidence) * 20)
+    if not (candidate.get("frame_path") or candidate.get("preview_path")):
+        score -= 50
+    return round(score, 3)
+
+
+def rank_candidate_queue(candidates: list[dict[str, Any]], *, dedupe: bool = True) -> list[dict[str, Any]]:
+    ranked: list[dict[str, Any]] = []
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for candidate in candidates:
+        candidate = dict(candidate)
+        candidate["group_key"] = candidate_group_key(candidate)
+        candidate["priority_score"] = candidate_priority(candidate)
+        groups.setdefault(candidate["group_key"], []).append(candidate)
+
+    if not dedupe:
+        for items in groups.values():
+            ranked.extend(items)
+    else:
+        for items in groups.values():
+            items = sorted(items, key=lambda item: (-float(item.get("priority_score", 0)), str(item.get("id", ""))))
+            representative = dict(items[0])
+            representative["duplicate_count"] = len(items)
+            representative["group_member_ids"] = [str(item.get("id", "")) for item in items]
+            ranked.append(representative)
+    return sorted(ranked, key=lambda item: (-float(item.get("priority_score", 0)), str(item.get("id", ""))))
+
+
 def normalize_candidate(row: dict[str, str], *, target: str, row_index: int) -> dict[str, Any]:
     candidate_id = row.get("candidate_id") or f"{target}:{row.get('match_id', 'unknown')}:{row_index:04d}"
     frame_path = row.get("frame_path") or row.get("exported_frame") or row.get("preview_path") or ""
-    return {
+    candidate = {
         "id": candidate_id,
         "target": target,
         "annotation_type": candidate_annotation_type(target),
@@ -419,12 +600,16 @@ def normalize_candidate(row: dict[str, str], *, target: str, row_index: int) -> 
         "details": row.get("details") or row.get("note") or "",
         "raw": row,
     }
+    candidate["preannotation"] = build_candidate_preannotation(candidate)
+    return candidate
 
 
 def load_candidate_queue(
     manifest_path: Path = DEFAULT_CANDIDATE_MANIFEST,
     staging_path: Path = DEFAULT_STAGING_PATH,
     reviews_path: Path = DEFAULT_LLM_REVIEWS_PATH,
+    *,
+    dedupe: bool = True,
 ) -> list[dict[str, Any]]:
     manifest = read_json(manifest_path, {})
     staging = staging_by_id(load_staging(staging_path))
@@ -451,18 +636,21 @@ def load_candidate_queue(
         candidate["staging"] = staging.get(candidate["id"], {})
         candidate["llm_review"] = reviews.get(candidate["id"], {})
         candidates.append(candidate)
-    return candidates
+    return rank_candidate_queue(candidates, dedupe=dedupe)
 
 
 def summarize_queue(candidates: list[dict[str, Any]]) -> dict[str, Any]:
     by_status: dict[str, int] = {}
     by_target: dict[str, int] = {}
+    hidden_duplicates = 0
     for item in candidates:
         by_status[str(item.get("status", "todo"))] = by_status.get(str(item.get("status", "todo")), 0) + 1
         by_target[str(item.get("target", ""))] = by_target.get(str(item.get("target", "")), 0) + 1
+        hidden_duplicates += max(0, int(item.get("duplicate_count", 1) or 1) - 1)
     return {
         "status": "needs_human" if by_status.get("todo", 0) else "ready",
         "total": len(candidates),
+        "hidden_duplicates": hidden_duplicates,
         "by_status": by_status,
         "by_target": by_target,
     }
@@ -485,6 +673,13 @@ def summarize_staging(staging: dict[str, Any]) -> dict[str, Any]:
 
 def action_catalog() -> list[dict[str, Any]]:
     return [definition.__dict__ for definition in ACTION_DEFINITIONS]
+
+
+def action_definition(action_id: str) -> ActionDefinition:
+    try:
+        return ACTION_BY_ID[action_id]
+    except KeyError as exc:
+        raise ValueError(f"unknown action: {action_id}") from exc
 
 
 def build_workbench_state(
@@ -511,8 +706,143 @@ def build_workbench_state(
         "queue_summary": summarize_queue(candidates),
         "staging_summary": summarize_staging(staging),
         "recent_actions": read_json(DEFAULT_ACTION_RUNS_PATH, {"runs": []}).get("runs", [])[-10:],
+        "recent_jobs": load_jobs().get("jobs", [])[-10:],
+        "automation_plan": build_automation_plan_from_state(
+            {
+                "reports": reports,
+                "asset_inbox": inbox,
+                "queue_summary": summarize_queue(candidates),
+                "staging_summary": summarize_staging(staging),
+            }
+        ),
         "actions": action_catalog(),
     }
+
+
+def build_automation_plan_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    reports = {str(report.get("id")): report for report in state.get("reports", []) if isinstance(report, dict)}
+    inbox = state.get("asset_inbox", {}) if isinstance(state.get("asset_inbox"), dict) else {}
+    queue_summary = state.get("queue_summary", {}) if isinstance(state.get("queue_summary"), dict) else {}
+    staging_summary = state.get("staging_summary", {}) if isinstance(state.get("staging_summary"), dict) else {}
+    steps: list[dict[str, Any]] = []
+
+    for video in inbox.get("videos", []):
+        if not isinstance(video, dict) or video.get("status") != "new":
+            continue
+        steps.append(
+            {
+                "id": f"intake:{video.get('suggested_match_id', '')}",
+                "kind": "action",
+                "action_id": "intake_video",
+                "payload": {
+                    "video": video.get("path", ""),
+                    "match_id": video.get("suggested_match_id", ""),
+                    "scan_analysis_windows": True,
+                },
+                "status": "runnable",
+                "reason": "new footage can be registered automatically",
+            }
+        )
+
+    validation_status = str(reports.get("validation_suite", {}).get("status", "missing"))
+    if validation_status in {"missing", "failed", "blocked"}:
+        steps.append(
+            {
+                "id": "run_validation_suite",
+                "kind": "action",
+                "action_id": "run_validation_suite",
+                "payload": {"run_analysis": False},
+                "status": "runnable",
+                "reason": f"validation_suite is {validation_status}",
+            }
+        )
+
+    candidates_status = str(reports.get("training_candidates", {}).get("status", "missing"))
+    if candidates_status in {"missing", "failed", "blocked"}:
+        steps.append(
+            {
+                "id": "refresh_training_candidates",
+                "kind": "action",
+                "action_id": "refresh_training_candidates",
+                "payload": {},
+                "status": "runnable",
+                "reason": f"training_candidates is {candidates_status}",
+            }
+        )
+
+    if int(staging_summary.get("by_status", {}).get("done", 0) or 0):
+        steps.append(
+            {
+                "id": "apply_staging_dry_run",
+                "kind": "apply_staging_dry_run",
+                "payload": {"dry_run": True},
+                "status": "runnable",
+                "reason": "done staging annotations should be validated before apply",
+            }
+        )
+
+    training_datasets_status = str(reports.get("training_datasets", {}).get("status", "missing"))
+    if training_datasets_status in {"missing", "needs_data", "needs_review", "failed", "blocked"}:
+        steps.append(
+            {
+                "id": "validate_training_datasets",
+                "kind": "action",
+                "action_id": "validate_training_datasets",
+                "payload": {},
+                "status": "runnable",
+                "reason": f"training_datasets is {training_datasets_status}",
+            }
+        )
+
+    readiness_status = str(reports.get("model_data_readiness", {}).get("status", "missing"))
+    if readiness_status in {"missing", "needs_data", "needs_review", "failed", "blocked"}:
+        steps.append(
+            {
+                "id": "refresh_model_data_readiness",
+                "kind": "action",
+                "action_id": "refresh_model_data_readiness",
+                "payload": {},
+                "status": "runnable",
+                "reason": f"model_data_readiness is {readiness_status}",
+            }
+        )
+
+    if int(queue_summary.get("by_status", {}).get("todo", 0) or 0):
+        steps.append(
+            {
+                "id": "annotate_candidates",
+                "kind": "human_gate",
+                "status": "needs_human",
+                "reason": f"{queue_summary.get('by_status', {}).get('todo', 0)} candidate groups still need review",
+            }
+        )
+    if str(reports.get("heatmap_labels", {}).get("status", "")) == "needs_labels":
+        steps.append(
+            {
+                "id": "heatmap_labels",
+                "kind": "human_gate",
+                "status": "needs_human",
+                "reason": "heatmap labels still need human confirmation",
+            }
+        )
+    return {
+        "schema_version": 1,
+        "status": "ready" if not steps else "has_steps",
+        "runnable_count": sum(1 for step in steps if step.get("status") == "runnable"),
+        "human_gate_count": sum(1 for step in steps if step.get("kind") == "human_gate"),
+        "steps": steps,
+    }
+
+
+def build_automation_plan(
+    *,
+    manifest_path: Path = DEFAULT_CANDIDATE_MANIFEST,
+    staging_path: Path = DEFAULT_STAGING_PATH,
+    reviews_path: Path = DEFAULT_LLM_REVIEWS_PATH,
+) -> dict[str, Any]:
+    return build_automation_plan_from_state(
+        build_workbench_state(manifest_path=manifest_path, staging_path=staging_path, reviews_path=reviews_path)
+    )
 
 
 def upsert_staging_annotation(
@@ -542,6 +872,9 @@ def upsert_staging_annotation(
             "updated_at": utc_now(),
         }
     )
+    validation_errors = validate_staging_item(item) if item.get("status") == "done" else []
+    item["validation_errors"] = validation_errors
+    item["validation_status"] = "needs_fix" if validation_errors else ("ready" if item.get("status") == "done" else "draft")
     items = [entry for entry in staging.get("items", []) if isinstance(entry, dict) and str(entry.get("id")) != item_id]
     items.append(item)
     staging["items"] = sorted(items, key=lambda entry: str(entry.get("id", "")))
@@ -771,73 +1104,263 @@ def record_llm_review(
     return review
 
 
+def heuristic_llm_review(candidate: dict[str, Any]) -> dict[str, Any]:
+    preannotation = candidate.get("preannotation", {}) if isinstance(candidate.get("preannotation"), dict) else {}
+    has_image = bool(candidate.get("frame_path") or candidate.get("preview_path"))
+    if not has_image:
+        return {
+            "suggestion": "skip_missing_image",
+            "confidence": 0.95,
+            "needs_human": False,
+            "rationale": "Candidate has no frame or preview image, so it cannot be labeled from the workbench.",
+            "source": "heuristic",
+        }
+    if preannotation.get("status") == "ready":
+        return {
+            "suggestion": "review_preannotation",
+            "confidence": preannotation.get("confidence") if preannotation.get("confidence") is not None else 0.65,
+            "needs_human": bool(preannotation.get("needs_human", True)),
+            "rationale": "Candidate includes raw coordinates that can be loaded as a draft preannotation.",
+            "source": "heuristic",
+        }
+    return {
+        "suggestion": "needs_visual_label",
+        "confidence": 0.4,
+        "needs_human": True,
+        "rationale": "No machine-readable label coordinates are available; visual confirmation is required.",
+        "source": "heuristic",
+    }
+
+
+def auto_record_llm_reviews(
+    *,
+    manifest_path: Path = DEFAULT_CANDIDATE_MANIFEST,
+    staging_path: Path = DEFAULT_STAGING_PATH,
+    reviews_path: Path = DEFAULT_LLM_REVIEWS_PATH,
+    limit: int = 30,
+) -> dict[str, Any]:
+    candidates = [
+        item
+        for item in load_candidate_queue(manifest_path, staging_path, reviews_path, dedupe=True)
+        if item.get("status") in {"todo", "draft"}
+    ][:limit]
+    payload = load_llm_reviews(reviews_path)
+    recorded: list[dict[str, Any]] = []
+    for candidate in candidates:
+        review = heuristic_llm_review(candidate)
+        review["updated_at"] = utc_now()
+        payload["reviews"][str(candidate["id"])] = review
+        recorded.append({"id": candidate["id"], **review})
+    payload["updated_at"] = utc_now()
+    write_json(reviews_path, payload)
+    return {
+        "schema_version": 1,
+        "status": "ready" if recorded else "empty",
+        "recorded_count": len(recorded),
+        "reviews": recorded,
+        "updated_at": utc_now(),
+    }
+
+
+def prefill_candidate_staging(
+    *,
+    target: str = "",
+    status: str = "draft",
+    limit: int = 30,
+    manifest_path: Path = DEFAULT_CANDIDATE_MANIFEST,
+    staging_path: Path = DEFAULT_STAGING_PATH,
+    reviews_path: Path = DEFAULT_LLM_REVIEWS_PATH,
+) -> dict[str, Any]:
+    candidates = [
+        item
+        for item in load_candidate_queue(manifest_path, staging_path, reviews_path, dedupe=True)
+        if item.get("status") in {"todo", "draft"}
+        and (not target or item.get("target") == target)
+        and item.get("preannotation", {}).get("status") == "ready"
+    ][:limit]
+    prefills: list[dict[str, Any]] = []
+    for candidate in candidates:
+        preannotation = candidate.get("preannotation", {})
+        item = upsert_staging_annotation(
+            {
+                "id": candidate["id"],
+                "target": candidate.get("target", ""),
+                "annotation_type": candidate.get("annotation_type", ""),
+                "status": status,
+                "split": "train",
+                "candidate": candidate,
+                "annotation": preannotation.get("annotation", {}),
+                "source": "auto_preannotation",
+            },
+            staging_path=staging_path,
+        )
+        prefills.append({"id": item["id"], "target": item.get("target", ""), "status": item.get("status", "")})
+    return {
+        "schema_version": 1,
+        "status": "ready" if prefills else "empty",
+        "prefilled_count": len(prefills),
+        "prefills": prefills,
+        "updated_at": utc_now(),
+    }
+
+
+def prefill_heatmap_staging(**kwargs: Any) -> dict[str, Any]:
+    return prefill_candidate_staging(target="heatmap_tracker_labels", **kwargs)
+
+
+def load_jobs(path: Path = DEFAULT_JOBS_PATH) -> dict[str, Any]:
+    payload = read_json(path, {})
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        return {"schema_version": 1, "updated_at": "", "jobs": []}
+    payload.setdefault("jobs", [])
+    return payload
+
+
+def upsert_job_record(job: dict[str, Any], path: Path = DEFAULT_JOBS_PATH) -> dict[str, Any]:
+    if not job.get("id"):
+        raise ValueError("job id is required")
+    payload = load_jobs(path)
+    jobs = [item for item in payload.get("jobs", []) if isinstance(item, dict) and item.get("id") != job["id"]]
+    jobs.append(job)
+    payload["jobs"] = sorted(jobs, key=lambda item: str(item.get("created_at", "")))[-100:]
+    payload["updated_at"] = utc_now()
+    write_json(path, payload)
+    return job
+
+
+def start_job_record(action_id: str, payload: dict[str, Any] | None = None, path: Path = DEFAULT_JOBS_PATH) -> dict[str, Any]:
+    definition = action_definition(action_id)
+    created_at = utc_now()
+    job = {
+        "id": safe_dataset_stem(f"job:{action_id}:{created_at}"),
+        "action_id": action_id,
+        "label": definition.label,
+        "label_zh": definition.label_zh,
+        "status": "running",
+        "payload": payload or {},
+        "created_at": created_at,
+        "started_at": created_at,
+        "completed_at": "",
+        "result": {},
+    }
+    return upsert_job_record(job, path)
+
+
+def finish_job_record(job_id: str, result: dict[str, Any], path: Path = DEFAULT_JOBS_PATH) -> dict[str, Any]:
+    payload = load_jobs(path)
+    jobs = [item for item in payload.get("jobs", []) if isinstance(item, dict)]
+    job = next((item for item in jobs if item.get("id") == job_id), {"id": job_id, "created_at": utc_now()})
+    job["status"] = str(result.get("status", "failed"))
+    job["result"] = result
+    job["completed_at"] = utc_now()
+    return upsert_job_record(job, path)
+
+
+ActionCommandBuilder = Callable[[dict[str, Any], str], list[str]]
+
+
+def command_refresh_training_candidates(payload: dict[str, Any], python: str) -> list[str]:
+    return [python, "scripts/export_training_sample_candidates.py"]
+
+
+def command_run_validation_suite(payload: dict[str, Any], python: str) -> list[str]:
+    command = [python, "scripts/run_validation_suite.py"]
+    if payload.get("run_analysis"):
+        command.append("--run-analysis")
+    return command
+
+
+def command_intake_video(payload: dict[str, Any], python: str) -> list[str]:
+    video = str(payload.get("video", "")).strip()
+    if not video:
+        raise ValueError("video is required")
+    match_id = str(payload.get("match_id") or Path(video).stem)
+    command = [
+        python,
+        "scripts/intake_samples.py",
+        "--video",
+        video,
+        "--match-id",
+        match_id,
+        "--purpose",
+        "validation",
+        "--purpose",
+        "analysis_candidate",
+        "--write",
+    ]
+    if payload.get("scan_analysis_windows", True):
+        command.append("--scan-analysis-windows")
+    return command
+
+
+def command_validate_training_datasets(payload: dict[str, Any], python: str) -> list[str]:
+    return [python, "scripts/validate_model_training_datasets.py"]
+
+
+def command_refresh_model_data_readiness(payload: dict[str, Any], python: str) -> list[str]:
+    return [python, "scripts/report_model_data_readiness.py"]
+
+
+def command_training_dry_run(payload: dict[str, Any], python: str) -> list[str]:
+    target = str(payload.get("target", "")).strip()
+    if not target:
+        raise ValueError("target is required")
+    return [python, "scripts/run_model_training_target.py", "--target", target]
+
+
+def command_training_execute(payload: dict[str, Any], python: str) -> list[str]:
+    if payload.get("confirm") != "execute_training":
+        raise ValueError("confirm must be execute_training")
+    target = str(payload.get("target", "")).strip()
+    if not target:
+        raise ValueError("target is required")
+    return [python, "scripts/run_model_training_target.py", "--target", target, "--execute"]
+
+
+def command_run_model_baseline(payload: dict[str, Any], python: str) -> list[str]:
+    command = [python, "scripts/run_model_experiment_baseline.py"]
+    if payload.get("run_validation_suite"):
+        command.append("--run-validation-suite")
+    return command
+
+
+def command_promotion(payload: dict[str, Any], python: str, *, apply: bool = False) -> list[str]:
+    model_id = str(payload.get("model_id", "")).strip()
+    candidate = str(payload.get("candidate", "")).strip()
+    if not model_id or not candidate:
+        raise ValueError("model_id and candidate are required")
+    command = [python, "scripts/promote_model_candidate.py", "--model-id", model_id, "--candidate", candidate]
+    validation_report = str(payload.get("validation_report", "")).strip()
+    if validation_report:
+        command.extend(["--validation-report", validation_report])
+    if apply:
+        if payload.get("confirm") != "apply_promotion":
+            raise ValueError("confirm must be apply_promotion")
+        command.append("--apply")
+    return command
+
+
+ACTION_COMMAND_BUILDERS: dict[str, ActionCommandBuilder] = {
+    "refresh_training_candidates": command_refresh_training_candidates,
+    "run_validation_suite": command_run_validation_suite,
+    "intake_video": command_intake_video,
+    "validate_training_datasets": command_validate_training_datasets,
+    "refresh_model_data_readiness": command_refresh_model_data_readiness,
+    "training_dry_run": command_training_dry_run,
+    "training_execute": command_training_execute,
+    "run_model_baseline": command_run_model_baseline,
+    "promotion_plan": lambda payload, python: command_promotion(payload, python, apply=False),
+    "promotion_apply": lambda payload, python: command_promotion(payload, python, apply=True),
+}
+
+
 def command_for_action(action_id: str, payload: dict[str, Any] | None = None) -> list[str]:
     payload = payload or {}
     python = str(payload.get("python") or sys.executable)
-    if action_id == "refresh_training_candidates":
-        return [python, "scripts/export_training_sample_candidates.py"]
-    if action_id == "run_validation_suite":
-        command = [python, "scripts/run_validation_suite.py"]
-        if payload.get("run_analysis"):
-            command.append("--run-analysis")
-        return command
-    if action_id == "intake_video":
-        video = str(payload.get("video", "")).strip()
-        if not video:
-            raise ValueError("video is required")
-        match_id = str(payload.get("match_id") or Path(video).stem)
-        command = [
-            python,
-            "scripts/intake_samples.py",
-            "--video",
-            video,
-            "--match-id",
-            match_id,
-            "--purpose",
-            "validation",
-            "--purpose",
-            "analysis_candidate",
-            "--write",
-        ]
-        if payload.get("scan_analysis_windows", True):
-            command.append("--scan-analysis-windows")
-        return command
-    if action_id == "validate_training_datasets":
-        return [python, "scripts/validate_model_training_datasets.py"]
-    if action_id == "refresh_model_data_readiness":
-        return [python, "scripts/report_model_data_readiness.py"]
-    if action_id == "training_dry_run":
-        target = str(payload.get("target", "")).strip()
-        if not target:
-            raise ValueError("target is required")
-        return [python, "scripts/run_model_training_target.py", "--target", target]
-    if action_id == "training_execute":
-        if payload.get("confirm") != "execute_training":
-            raise ValueError("confirm must be execute_training")
-        target = str(payload.get("target", "")).strip()
-        if not target:
-            raise ValueError("target is required")
-        return [python, "scripts/run_model_training_target.py", "--target", target, "--execute"]
-    if action_id == "run_model_baseline":
-        command = [python, "scripts/run_model_experiment_baseline.py"]
-        if payload.get("run_validation_suite"):
-            command.append("--run-validation-suite")
-        return command
-    if action_id in {"promotion_plan", "promotion_apply"}:
-        model_id = str(payload.get("model_id", "")).strip()
-        candidate = str(payload.get("candidate", "")).strip()
-        if not model_id or not candidate:
-            raise ValueError("model_id and candidate are required")
-        command = [python, "scripts/promote_model_candidate.py", "--model-id", model_id, "--candidate", candidate]
-        validation_report = str(payload.get("validation_report", "")).strip()
-        if validation_report:
-            command.extend(["--validation-report", validation_report])
-        if action_id == "promotion_apply":
-            if payload.get("confirm") != "apply_promotion":
-                raise ValueError("confirm must be apply_promotion")
-            command.append("--apply")
-        return command
-    raise ValueError(f"unknown action: {action_id}")
+    builder = ACTION_COMMAND_BUILDERS.get(action_id)
+    if not builder:
+        raise ValueError(f"unknown action: {action_id}")
+    return builder(payload, python)
 
 
 def append_action_run(record: dict[str, Any], path: Path = DEFAULT_ACTION_RUNS_PATH) -> dict[str, Any]:
@@ -895,6 +1418,73 @@ def run_workbench_action(
             "completed_at": completed,
         }
     return append_action_run(record)
+
+
+def append_automation_run(record: dict[str, Any], path: Path = DEFAULT_AUTOMATION_RUNS_PATH) -> dict[str, Any]:
+    payload = read_json(path, {"schema_version": 1, "runs": []})
+    if not isinstance(payload, dict):
+        payload = {"schema_version": 1, "runs": []}
+    payload.setdefault("runs", [])
+    payload["runs"].append(record)
+    payload["updated_at"] = utc_now()
+    write_json(path, payload)
+    return record
+
+
+def run_automation_pipeline(
+    *,
+    include_long: bool = False,
+    max_steps: int = 8,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    plan = build_automation_plan()
+    executed: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    started = utc_now()
+    for step in plan.get("steps", []):
+        if len(executed) >= max_steps:
+            skipped.append({**step, "skip_reason": "max_steps reached"})
+            continue
+        if step.get("kind") == "human_gate":
+            skipped.append({**step, "skip_reason": "human gate"})
+            continue
+        if step.get("kind") == "action":
+            action_id = str(step.get("action_id", ""))
+            definition = action_definition(action_id)
+            if not definition.automation_safe:
+                skipped.append({**step, "skip_reason": "not automation safe"})
+                continue
+            if definition.long_running and not include_long:
+                skipped.append({**step, "skip_reason": "long-running step requires include_long"})
+                continue
+            if dry_run:
+                executed.append({**step, "status": "planned"})
+                continue
+            result = run_workbench_action(action_id, step.get("payload", {}))
+            executed.append({**step, "result": result, "status": result.get("status", "failed")})
+            if result.get("status") not in {"passed", "ready"}:
+                break
+        elif step.get("kind") == "apply_staging_dry_run":
+            if dry_run:
+                executed.append({**step, "status": "planned"})
+                continue
+            result = apply_staging_annotations(dry_run=True)
+            executed.append({**step, "result": result, "status": result.get("status", "failed")})
+        else:
+            skipped.append({**step, "skip_reason": "unknown step kind"})
+    record = {
+        "schema_version": 1,
+        "status": "ready" if not executed and not skipped else "completed",
+        "dry_run": dry_run,
+        "include_long": include_long,
+        "started_at": started,
+        "completed_at": utc_now(),
+        "executed_count": len(executed),
+        "skipped_count": len(skipped),
+        "executed": executed,
+        "skipped": skipped,
+    }
+    return append_automation_run(record)
 
 
 def safe_project_file(path: str | Path) -> Path:

@@ -29,13 +29,27 @@ http://127.0.0.1:8765
 | Goal | Web 工作台能力 | 当前安全边界 |
 | --- | --- | --- |
 | 1. 总控台 | 读取 validation、model errors、training candidates、heatmap labels、dataset readiness、runtime、promotion 等报告 | 只读汇总 |
-| 2. 新素材接入 | 扫描 `footages/`，识别未登记视频，表单触发 `scripts/intake_samples.py` | 只执行白名单脚本 |
-| 3. 失败样本队列 | 读取 `outputs/training_sample_candidates/manifest.json`，展示 UI/OCR/heatmap 候选 | 队列来自现有导出器 |
-| 4. 标注工作台 | Canvas 画 YOLO/OCR 框，heatmap 点坐标，保存到 staging | 不直接写正式训练集 |
-| 5. LLM 辅助裁判 | 生成 `outputs/active_learning_workbench/llm_review_pack.json`，可记录 LLM 建议 | LLM 建议不自动入库 |
-| 6. staging 入库 | 对 `done` 标注做 dry-run 或 apply，生成 YOLO label 和 sidecar metadata | apply 前可先 dry-run |
-| 7. 训练/评估编排 | 触发 dataset validation、training dry-run、training execute、baseline | 真训练需要确认 |
-| 8. 模型提升/回滚 | 触发 promotion plan/apply | apply 需要确认，现有脚本会备份旧模型 |
+| 2. 新素材接入 | 扫描 `footages/`，识别未登记视频，表单或自动推进触发 `scripts/intake_samples.py` | 只执行白名单脚本 |
+| 3. 失败样本队列 | 读取 `outputs/training_sample_candidates/manifest.json`，展示 UI/OCR/heatmap 候选，按优先级去重 | 队列来自现有导出器 |
+| 4. 标注工作台 | Canvas 画 YOLO/OCR 框，heatmap 点坐标，支持原始坐标预标注，保存到 staging | 不直接写正式训练集 |
+| 5. LLM 辅助裁判 | 生成 `outputs/active_learning_workbench/llm_review_pack.json`，可记录 LLM/规则建议 | 建议不自动入库 |
+| 6. staging 入库 | 对 `done` 标注自动 dry-run 或手动 apply，生成 YOLO label 和 sidecar metadata | apply 前可先 dry-run |
+| 7. 训练/评估编排 | 触发 dataset validation、training dry-run、training execute、baseline；长任务走后台 job | 真训练需要确认 |
+| 8. 模型提升/回滚 | 触发 promotion plan/apply，action 命令由 registry 管理 | apply 需要确认，现有脚本会备份旧模型 |
+
+## 自动化边界
+
+工作台现在会生成 `automation_plan`，并提供「自动预演」和「自动推进」：
+
+- 自动执行：新素材接入、验证报告刷新、候选样本刷新、训练集验证、模型/数据就绪刷新、暂存 dry-run。
+- 自动辅助：候选优先级排序、相近重复帧聚合、原始 bbox/heatmap 坐标预标注、本地规则审阅。
+- 人工门禁：视觉标注确认、正式写入训练集、执行训练、应用模型提升。
+
+后台任务记录写入：
+
+```text
+outputs/active_learning_workbench/jobs.json
+```
 
 ## 典型使用流程
 

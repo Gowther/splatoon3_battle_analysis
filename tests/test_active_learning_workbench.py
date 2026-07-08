@@ -5,11 +5,18 @@ from pathlib import Path
 
 from src.active_learning_workbench import (
     action_catalog,
+    auto_record_llm_reviews,
     apply_staging_annotations,
+    build_automation_plan_from_state,
+    build_candidate_preannotation,
     build_llm_review_pack,
     command_for_action,
+    finish_job_record,
     load_candidate_queue,
+    load_jobs,
+    prefill_candidate_staging,
     scan_asset_inbox,
+    start_job_record,
     upsert_staging_annotation,
     validate_staging_item,
     write_json,
@@ -57,10 +64,11 @@ class ActiveLearningWorkbenchTests(unittest.TestCase):
 
             queue = load_candidate_queue(manifest, staging, reviews)
 
+        by_id = {item["id"]: item for item in queue}
         self.assertEqual(len(queue), 2)
-        self.assertEqual(queue[0]["status"], "done")
-        self.assertEqual(queue[0]["llm_review"]["suggestion"], "player")
-        self.assertEqual(queue[1]["target"], "heatmap_tracker_labels")
+        self.assertEqual(by_id["ui:1"]["status"], "done")
+        self.assertEqual(by_id["ui:1"]["llm_review"]["suggestion"], "player")
+        self.assertTrue(any(item["target"] == "heatmap_tracker_labels" for item in queue))
 
     def test_upsert_annotation_and_apply_dry_run(self):
         with tempfile.TemporaryDirectory() as tmp_name:
@@ -97,9 +105,47 @@ class ActiveLearningWorkbenchTests(unittest.TestCase):
             )
 
         self.assertEqual(item["status"], "done")
+        self.assertEqual(item["validation_status"], "ready")
         self.assertEqual(report["status"], "ready")
         self.assertEqual(report["applied_count"], 1)
         self.assertEqual(report["skipped_count"], 0)
+
+    def test_candidate_queue_dedupes_and_prioritizes_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            candidates = tmp / "candidates.csv"
+            candidates.write_text(
+                "candidate_id,target,reason,source_id,match_id,video,elapsed_time,row_index,frame_path,details\n"
+                "ui:1,ui_detector_yolo,missing_player_state,src,n_match,video.mp4,100.0,1,frame.jpg,detail\n"
+                "ui:2,ui_detector_yolo,missing_player_state,src,n_match,video.mp4,100.8,2,frame2.jpg,detail\n",
+                encoding="utf-8",
+            )
+            manifest = tmp / "manifest.json"
+            write_json(manifest, {"analysis": {"targets": {"ui_detector_yolo": {"csv": str(candidates), "rows": 2}}}})
+
+            queue = load_candidate_queue(manifest, tmp / "staging.json", tmp / "reviews.json")
+            full_queue = load_candidate_queue(manifest, tmp / "staging.json", tmp / "reviews.json", dedupe=False)
+
+        self.assertEqual(len(queue), 1)
+        self.assertEqual(queue[0]["duplicate_count"], 2)
+        self.assertEqual(len(full_queue), 2)
+
+    def test_build_candidate_preannotation_from_raw_box_and_heatmap_point(self):
+        box_preannotation = build_candidate_preannotation(
+            {
+                "target": "ui_detector_yolo",
+                "annotation_type": "yolo_box",
+                "raw": {"x1": "10", "y1": "20", "x2": "30", "y2": "60", "image_width": "100", "image_height": "100"},
+            }
+        )
+        heatmap_preannotation = build_candidate_preannotation(
+            {"target": "heatmap_tracker_labels", "raw": {"x": "123.45", "y": "67.89", "confidence": "0.9"}}
+        )
+
+        self.assertEqual(box_preannotation["status"], "ready")
+        self.assertAlmostEqual(box_preannotation["annotation"]["boxes"][0]["x_center"], 0.2)
+        self.assertEqual(heatmap_preannotation["annotation"]["point"]["x"], "123.5")
+        self.assertFalse(heatmap_preannotation["needs_human"])
 
     def test_validate_staging_item_rejects_bad_box(self):
         errors = validate_staging_item(
@@ -137,6 +183,78 @@ class ActiveLearningWorkbenchTests(unittest.TestCase):
 
         self.assertEqual(pack["status"], "ready")
         self.assertEqual(pack["tasks"][0]["id"], "ui:1")
+
+    def test_auto_record_llm_reviews_writes_rule_based_reviews(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            candidates = tmp / "candidates.csv"
+            candidates.write_text(
+                "candidate_id,target,reason,source_id,match_id,video,elapsed_time,row_index,frame_path,details\n"
+                "ui:1,ui_detector_yolo,missing,src,n_match,video.mp4,1.0,1,,detail\n",
+                encoding="utf-8",
+            )
+            manifest = tmp / "manifest.json"
+            reviews = tmp / "reviews.json"
+            write_json(manifest, {"analysis": {"targets": {"ui_detector_yolo": {"csv": str(candidates), "rows": 1}}}})
+
+            report = auto_record_llm_reviews(
+                manifest_path=manifest,
+                staging_path=tmp / "staging.json",
+                reviews_path=reviews,
+            )
+
+        self.assertEqual(report["recorded_count"], 1)
+        self.assertEqual(report["reviews"][0]["suggestion"], "skip_missing_image")
+
+    def test_prefill_candidate_staging_creates_draft_from_heatmap_point(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            heatmap_csv = tmp / "heatmap.csv"
+            heatmap_csv.write_text(
+                "match_id,heatmap_id,anomaly_type,time,track_slot,x,y,confidence,exported_frame\n"
+                "match_9,heatmap_match9,jump_reset,2.0,3,12.3,45.6,0.9,heat.jpg\n",
+                encoding="utf-8",
+            )
+            manifest = tmp / "manifest.json"
+            staging = tmp / "staging.json"
+            write_json(manifest, {"heatmap": {"anomalies_csv": str(heatmap_csv)}})
+
+            report = prefill_candidate_staging(
+                target="heatmap_tracker_labels",
+                manifest_path=manifest,
+                staging_path=staging,
+                reviews_path=tmp / "reviews.json",
+            )
+
+        self.assertEqual(report["prefilled_count"], 1)
+        self.assertEqual(report["prefills"][0]["status"], "draft")
+
+    def test_automation_plan_separates_runnable_steps_and_human_gates(self):
+        plan = build_automation_plan_from_state(
+            {
+                "reports": [
+                    {"id": "training_datasets", "status": "needs_data"},
+                    {"id": "model_data_readiness", "status": "needs_data"},
+                    {"id": "heatmap_labels", "status": "needs_labels"},
+                ],
+                "asset_inbox": {"videos": [{"status": "new", "path": "footages/a.mp4", "suggested_match_id": "a"}]},
+                "queue_summary": {"by_status": {"todo": 2}},
+                "staging_summary": {"by_status": {"done": 1}},
+            }
+        )
+
+        self.assertGreaterEqual(plan["runnable_count"], 3)
+        self.assertGreaterEqual(plan["human_gate_count"], 1)
+
+    def test_job_records_can_start_and_finish(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            jobs_path = Path(tmp_name) / "jobs.json"
+            job = start_job_record("refresh_training_candidates", {}, path=jobs_path)
+            finished = finish_job_record(job["id"], {"status": "passed"}, path=jobs_path)
+            jobs = load_jobs(jobs_path)
+
+        self.assertEqual(finished["status"], "passed")
+        self.assertEqual(jobs["jobs"][0]["id"], job["id"])
 
     def test_command_for_action_requires_confirm_for_dangerous_actions(self):
         with self.assertRaises(ValueError):
