@@ -242,3 +242,32 @@ python scripts/report_death_annotations.py \
 默认输出：
 
 - `outputs/death_events/death_annotation_report.json`
+
+## Goal 7: 自动复盘片段计划
+
+Goal 7 新增命令：
+
+```bash
+python scripts/build_replay_clips.py \
+  --events-csv outputs/death_events/attributed_death_events.csv
+```
+
+默认输出：
+
+- `outputs/replay_clips/replay_clips.csv`
+- `outputs/replay_clips/replay_clips.json`
+
+默认只生成剪辑计划，不实际切视频。要生成 MP4：
+
+```bash
+python scripts/build_replay_clips.py \
+  --events-csv outputs/death_events/attributed_death_events.csv \
+  --video footages/example.mp4 \
+  --write-clips
+```
+
+计划中会包含：
+
+- 每个 death event 的复盘片段。
+- 同一个 killer 在短时间内造成多次死亡的 `multi_kill_candidate`。
+- `score`，用于排序精彩击杀候选。
