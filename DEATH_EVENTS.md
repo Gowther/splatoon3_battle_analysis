@@ -152,3 +152,34 @@ python scripts/build_death_ocr_candidates.py \
 - `details`
 
 其中 `frame_path` 指向已经裁好的 OCR crop，`source_frame_path` 保留原始复核帧路径。
+
+## Goal 4: 死亡事件归因规则
+
+Goal 4 新增命令：
+
+```bash
+python scripts/attribute_death_events.py \
+  --events-csv outputs/death_events/example_death_events.csv \
+  --ocr-candidates-csv outputs/death_events/ocr_candidates/death_ocr_candidates.csv \
+  --analysis-csv outputs/example_analysis.csv
+```
+
+默认输出：
+
+- `outputs/death_events/attributed_death_events.csv`
+- `outputs/death_events/death_attribution_report.json`
+
+归因规则目前只做可解释推断：
+
+- 从 OCR 候选的 `corrected_text` / `ocr_text` / `text` 中匹配武器名。
+- 用 `analysis-csv` 中离死亡时间最近的一行作为 8 人武器快照。
+- 根据 `victim_slot` 只在对面 4 个槽位中寻找同武器候选。
+- 如果同武器唯一，填入 `killer_slot` / `killer` / `killer_weapon`。
+- 如果同武器不唯一，只写 `killer_candidates` 并标记 `review_required=true`。
+
+输出中的关键字段：
+
+- `attribution_status`: `attributed` / `weapon_only` / `no_ocr` / `needs_review`
+- `attribution_confidence`: 规则置信度，不等同于模型概率。
+- `attribution_evidence`: 为什么这么判断。
+- `killer_candidates`: 多候选时保留给人工或 LLM 继续判断。
