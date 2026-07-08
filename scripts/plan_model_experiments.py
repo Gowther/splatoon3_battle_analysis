@@ -16,8 +16,8 @@ from src.model_experiments import (
     load_json,
     load_optional_json,
     render_markdown,
-    write_json,
 )
+from src.report_io import write_json_report, write_text_report
 
 
 configure_environment()
@@ -40,10 +40,8 @@ def main() -> int:
     heatmap_comparison = load_optional_json(args.heatmap_comparison)
     plan = build_experiment_plan(config, model_errors=model_errors, heatmap_comparison=heatmap_comparison)
 
-    output = project_path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(render_markdown(plan), encoding="utf-8")
-    write_json(args.json_output, plan)
+    output = write_text_report(args.output, render_markdown(plan))
+    write_json_report(args.json_output, plan)
 
     print(f"wrote model experiment plan: {output}")
     print(f"wrote model experiment plan json: {project_path(args.json_output)}")

@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.change_package import build_change_package, render_markdown, write_json
+from src.change_package import build_change_package, render_markdown
+from src.report_io import write_json_report, write_text_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,10 +29,8 @@ def git_status() -> str:
 def main() -> int:
     args = parse_args()
     report = build_change_package(git_status(), verification=args.verification)
-    output_path = args.output.expanduser()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(render_markdown(report), encoding="utf-8")
-    write_json(args.json_output.expanduser(), report)
+    write_text_report(args.output.expanduser(), render_markdown(report))
+    write_json_report(args.json_output.expanduser(), report)
     print(f"change package paths: {report['change_count']}")
     return 0
 

@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.data_registry import DEFAULT_REGISTRY, resolve_project_path
+from src.report_io import strict_exit_code, write_json_report, write_text_report
 from src.validation_sample_report import build_report, render_markdown
 
 
@@ -36,13 +37,6 @@ def read_json(path: Path, fallback: Any) -> Any:
         return json.load(f)
 
 
-def write_text(path: Path, content: str) -> None:
-    target = path.expanduser()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
-    print(f"wrote: {target}")
-
-
 def main() -> int:
     args = parse_args()
     registry = read_json(args.registry, {"matches": []})
@@ -60,10 +54,10 @@ def main() -> int:
         model_error_report,
         heatmap_quality_loop,
     )
-    write_text(args.output, render_markdown(report))
-    write_text(args.json_output, json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+    write_text_report(args.output, render_markdown(report))
+    write_json_report(args.json_output, report)
     print(f"validation sample report status: {report['status']}")
-    return 1 if args.strict and report["status"] != "passed" else 0
+    return strict_exit_code(report["status"], args.strict, passing_statuses={"passed"})
 
 
 if __name__ == "__main__":

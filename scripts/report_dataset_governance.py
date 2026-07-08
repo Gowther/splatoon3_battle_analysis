@@ -9,9 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.core.paths import configure_environment, project_path
+from src.core.paths import configure_environment
 from src.data_registry import DEFAULT_REGISTRY
-from src.dataset_governance import build_dataset_governance_report, render_markdown, write_json
+from src.dataset_governance import build_dataset_governance_report, render_markdown
+from src.report_io import strict_exit_code, write_json_report, write_text_report
 
 
 configure_environment()
@@ -30,13 +31,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def write_text(path: Path, content: str) -> None:
-    target = project_path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
-    print(f"wrote: {target}")
-
-
 def main() -> int:
     args = parse_args()
     report = build_dataset_governance_report(
@@ -46,10 +40,10 @@ def main() -> int:
         model=args.model,
         min_images_per_class=args.min_images_per_class,
     )
-    write_text(args.output, render_markdown(report))
-    write_json(args.json_output, report)
+    write_text_report(args.output, render_markdown(report))
+    write_json_report(args.json_output, report)
     print(f"dataset governance status: {report['status']}")
-    return 1 if args.strict and report["status"] != "passed" else 0
+    return strict_exit_code(report["status"], args.strict, passing_statuses={"passed"})
 
 
 if __name__ == "__main__":

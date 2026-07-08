@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -18,8 +17,8 @@ from src.model_experiments import (
     load_json,
     load_optional_json,
     render_benchmark_markdown,
-    write_json,
 )
+from src.report_io import write_json_report, write_text_report
 from src.validation_suite import validation_ids
 
 
@@ -65,10 +64,8 @@ def main() -> int:
         include_baseline_priority=args.include_baseline_priority,
     )
 
-    output = project_path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(render_benchmark_markdown(plan), encoding="utf-8")
-    write_json(args.json_output, plan)
+    output = write_text_report(args.output, render_benchmark_markdown(plan))
+    write_json_report(args.json_output, plan)
 
     print(f"wrote model benchmark plan: {output}")
     print(f"wrote model benchmark plan json: {project_path(args.json_output)}")

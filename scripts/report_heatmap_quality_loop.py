@@ -10,7 +10,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.data_registry import DEFAULT_REGISTRY, load_registry, resolve_project_path
-from src.heatmap.quality_loop import build_quality_loop_report, render_markdown, write_json
+from src.heatmap.quality_loop import build_quality_loop_report, render_markdown
+from src.report_io import strict_exit_code, write_json_report, write_text_report
 
 
 DEFAULT_CONFIG = ROOT / "config" / "annotation_samples.json"
@@ -40,13 +41,6 @@ def load_config(path: Path) -> dict:
         return json.load(f)
 
 
-def write_text(path: Path, content: str) -> None:
-    target = path.expanduser()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
-    print(f"wrote: {target}")
-
-
 def main() -> int:
     args = parse_args()
     config = load_config(args.config)
@@ -67,10 +61,10 @@ def main() -> int:
         min_recall=args.min_recall,
         max_mean_error_px=args.max_mean_error_px,
     )
-    write_text(args.output, render_markdown(report))
-    write_json(args.json_output.expanduser(), report)
+    write_text_report(args.output, render_markdown(report))
+    write_json_report(args.json_output.expanduser(), report)
     print(f"heatmap quality loop status: {report['status']}")
-    return 1 if args.strict and report["status"] != "passed" else 0
+    return strict_exit_code(report["status"], args.strict, passing_statuses={"passed"})
 
 
 if __name__ == "__main__":

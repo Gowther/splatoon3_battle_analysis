@@ -9,7 +9,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.data_registry import DEFAULT_REGISTRY
-from src.heatmap.parameter_experiments import build_parameter_experiment_plan, render_markdown, write_json
+from src.heatmap.parameter_experiments import build_parameter_experiment_plan, render_markdown
+from src.report_io import write_json_report, write_text_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,9 +38,8 @@ def main() -> int:
         write_configs=args.write_configs,
         threshold_px=args.threshold_px,
     )
-    args.output.expanduser().parent.mkdir(parents=True, exist_ok=True)
-    args.output.expanduser().write_text(render_markdown(plan), encoding="utf-8")
-    write_json(args.json_output.expanduser(), plan)
+    write_text_report(args.output.expanduser(), render_markdown(plan))
+    write_json_report(args.json_output.expanduser(), plan)
     print(f"heatmap parameter experiment status: {plan['status']}")
     print(f"candidates: {plan['summary']['candidate_count']}")
     return 0

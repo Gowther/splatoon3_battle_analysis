@@ -9,7 +9,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.data_registry import DEFAULT_REGISTRY
-from src.heatmap.tuning import build_tuning_report, render_markdown, write_json
+from src.heatmap.tuning import build_tuning_report, render_markdown
+from src.report_io import strict_exit_code, write_json_report, write_text_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,12 +31,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    print(f"wrote: {path}")
-
-
 def main() -> int:
     args = parse_args()
     report = build_tuning_report(
@@ -46,10 +41,10 @@ def main() -> int:
         max_mean_error_px=args.max_mean_error_px,
         heatmap_comparison_json=args.heatmap_comparison,
     )
-    write_text(args.output.expanduser(), render_markdown(report))
-    write_json(args.json_output.expanduser(), report)
+    write_text_report(args.output.expanduser(), render_markdown(report))
+    write_json_report(args.json_output.expanduser(), report)
     print(f"heatmap tuning status: {report['status']}")
-    return 1 if args.strict and report["status"] != "ready" else 0
+    return strict_exit_code(report["status"], args.strict, passing_statuses={"ready"})
 
 
 if __name__ == "__main__":

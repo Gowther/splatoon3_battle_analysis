@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.model_benchmark_baseline import build_baseline_snapshot, load_optional_json, render_markdown, write_json
+from src.model_benchmark_baseline import build_baseline_snapshot, load_optional_json, render_markdown
+from src.report_io import write_json_report, write_text_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,12 +24,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    print(f"wrote: {path}")
-
-
 def main() -> int:
     args = parse_args()
     report = build_baseline_snapshot(
@@ -38,8 +33,8 @@ def main() -> int:
         heatmap_quality_loop=load_optional_json(args.heatmap_quality_loop),
         benchmark_plan=load_optional_json(args.benchmark_plan),
     )
-    write_text(args.output.expanduser(), render_markdown(report))
-    write_json(args.json_output.expanduser(), report)
+    write_text_report(args.output.expanduser(), render_markdown(report))
+    write_json_report(args.json_output.expanduser(), report)
     print(f"model benchmark baseline status: {report['status']}")
     return 0
 

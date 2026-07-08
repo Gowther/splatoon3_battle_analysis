@@ -13,8 +13,8 @@ from src.runtime_benchmarks import (
     default_runtime_reports,
     parse_runtime_report_arg,
     render_markdown,
-    write_json,
 )
+from src.report_io import write_json_report, write_text_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,9 +29,8 @@ def main() -> int:
     args = parse_args()
     reports = [parse_runtime_report_arg(item) for item in args.runtime_report] or default_runtime_reports()
     report = build_runtime_benchmark_report(reports)
-    args.output.expanduser().parent.mkdir(parents=True, exist_ok=True)
-    args.output.expanduser().write_text(render_markdown(report), encoding="utf-8")
-    write_json(args.json_output.expanduser(), report)
+    write_text_report(args.output.expanduser(), render_markdown(report))
+    write_json_report(args.json_output.expanduser(), report)
     print(f"runtime benchmark status: {report['status']}")
     return 0
 
