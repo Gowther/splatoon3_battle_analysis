@@ -435,6 +435,25 @@ def experiment_delivery_steps(python: Path, root: Path, work_dir: Path) -> list[
             ],
         ),
         CheckStep(
+            "training sample candidate export helper",
+            [
+                python,
+                "scripts/export_training_sample_candidates.py",
+                "--evaluation-results",
+                root / "outputs" / "validation_suite" / "evaluation" / "evaluation_results.json",
+                "--model-training-plan",
+                work_dir / "model_training_plan.json",
+                "--output-dir",
+                work_dir / "training_sample_candidates",
+                "--no-frame-export",
+                "--no-heatmap",
+                "--output",
+                work_dir / "training_sample_candidates.md",
+                "--json-output",
+                work_dir / "training_sample_candidates.json",
+            ],
+        ),
+        CheckStep(
             "model data readiness helper",
             [
                 python,

@@ -36,6 +36,7 @@ class ProjectCheckRegistryTests(unittest.TestCase):
 
         self.assertIn("experiment manifest helper", names)
         self.assertIn("heatmap productization helper", names)
+        self.assertIn("training sample candidate export helper", names)
         self.assertIn("model data readiness helper", names)
         self.assertIn("stage coordinate normalization helper", names)
 
