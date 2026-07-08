@@ -129,6 +129,49 @@ class ActiveLearningWorkbenchTests(unittest.TestCase):
         self.assertEqual(report["applied_count"], 1)
         self.assertEqual(report["skipped_count"], 0)
 
+    def test_apply_staging_annotations_writes_death_event_labels(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            crop = tmp / "crop.jpg"
+            crop.write_bytes(b"fake crop")
+            staging = tmp / "staging.json"
+            write_json(
+                staging,
+                {
+                    "schema_version": 1,
+                    "items": [
+                        {
+                            "id": "death:1",
+                            "target": "death_event_ocr",
+                            "annotation_type": "ocr_box_text",
+                            "status": "done",
+                            "candidate": {
+                                "match_id": "m1",
+                                "elapsed_time": "2.0",
+                                "frame_path": str(crop),
+                                "source_id": "e1",
+                                "raw": {"event_id": "e1", "region": "death_message_center"},
+                            },
+                            "annotation": {"text": "Blaster", "notes": "killer=team_2_slot_1; cause_weapon=Blaster"},
+                        }
+                    ],
+                },
+            )
+            death_labels = tmp / "death_labels.csv"
+
+            report = apply_staging_annotations(
+                staging_path=staging,
+                dry_run=False,
+                report_path=tmp / "apply.json",
+                death_labels_path=death_labels,
+            )
+            death_label_text = death_labels.read_text(encoding="utf-8")
+
+            self.assertEqual(report["skipped_count"], 0)
+            self.assertEqual(report["applied_count"], 1)
+            self.assertEqual(report["death_event_labels_csv"], str(death_labels))
+            self.assertIn("Blaster", death_label_text)
+
     def test_candidate_queue_dedupes_and_prioritizes_candidates(self):
         with tempfile.TemporaryDirectory() as tmp_name:
             tmp = Path(tmp_name)

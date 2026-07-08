@@ -203,3 +203,42 @@ Goal 5 将 `death_event_ocr` 接入现有主动学习工作台：
   }
 }
 ```
+
+## Goal 6: 标注入库与覆盖报告
+
+Web 工作台中完成的 `death_event_ocr` 标注会通过“应用暂存”写入：
+
+- `outputs/active_learning_workbench/death_event_ocr_labels.csv`
+
+CSV 会保留：
+
+- `candidate_id`
+- `event_id`
+- `match_id`
+- `time`
+- `region`
+- `corrected_text`
+- `killer`
+- `cause_weapon`
+- `killer_weapon`
+- `cause_text`
+- `notes`
+
+`notes` 支持简单结构化写法：
+
+```text
+killer=team_2_slot_1; cause_weapon=Blaster; confidence=0.8
+```
+
+覆盖报告命令：
+
+```bash
+python scripts/report_death_annotations.py \
+  --labels-csv outputs/active_learning_workbench/death_event_ocr_labels.csv \
+  --candidates-csv outputs/death_events/ocr_candidates/death_ocr_candidates.csv \
+  --attribution-csv outputs/death_events/attributed_death_events.csv
+```
+
+默认输出：
+
+- `outputs/death_events/death_annotation_report.json`

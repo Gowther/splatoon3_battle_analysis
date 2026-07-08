@@ -13,6 +13,12 @@ from typing import Any, Callable
 
 from src.core.paths import ROOT, project_path
 from src.data_registry import load_registry
+from src.death_annotation_store import (
+    DEATH_REVIEW_FIELDS,
+    merge_review_rows,
+    read_csv_rows as read_death_review_rows,
+    staging_item_to_death_review_row,
+)
 
 
 DEFAULT_STATE_DIR = ROOT / "outputs" / "active_learning_workbench"
@@ -958,6 +964,9 @@ def validate_staging_item(item: dict[str, Any]) -> list[str]:
         point = annotation.get("point", {})
         if not isinstance(point, dict) or point.get("x") in (None, "") or point.get("y") in (None, ""):
             errors.append("heatmap point x/y is required")
+    elif target == "death_event_ocr":
+        if not (annotation.get("text") or annotation.get("notes")):
+            errors.append("death event OCR text or notes are required")
     return errors
 
 
@@ -987,11 +996,13 @@ def apply_staging_annotations(
     staging_path: Path = DEFAULT_STAGING_PATH,
     dry_run: bool = True,
     report_path: Path = DEFAULT_STATE_DIR / "apply_report.json",
+    death_labels_path: Path = DEFAULT_STATE_DIR / "death_event_ocr_labels.csv",
 ) -> dict[str, Any]:
     staging = load_staging(staging_path)
     applied: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     heatmap_rows: list[dict[str, Any]] = []
+    death_rows: list[dict[str, Any]] = []
     for item in staging.get("items", []):
         if not isinstance(item, dict) or item.get("status") != "done":
             continue
@@ -1016,6 +1027,10 @@ def apply_staging_annotations(
                 }
             )
             applied.append({"id": item.get("id", ""), "target": target, "destination": "heatmap_staging_labels.csv"})
+            continue
+        if target == "death_event_ocr":
+            death_rows.append(staging_item_to_death_review_row(item))
+            applied.append({"id": item.get("id", ""), "target": target, "destination": "death_event_ocr_labels.csv"})
             continue
         dataset = TARGET_DATASET_PATHS.get(target)
         if not dataset:
@@ -1060,6 +1075,10 @@ def apply_staging_annotations(
     heatmap_csv = DEFAULT_STATE_DIR / "heatmap_staging_labels.csv"
     if heatmap_rows and not dry_run:
         write_csv_rows(heatmap_csv, heatmap_rows, ["candidate_id", "match_id", "time", "x", "y", "visibility", "notes"])
+    if death_rows and not dry_run:
+        existing_death_rows = read_death_review_rows(death_labels_path)
+        merged_death_rows = merge_review_rows(existing_death_rows, death_rows)
+        write_csv_rows(death_labels_path, merged_death_rows, DEATH_REVIEW_FIELDS)
     report = {
         "schema_version": 1,
         "status": "ready" if not skipped else "needs_review",
@@ -1069,6 +1088,7 @@ def apply_staging_annotations(
         "applied": applied,
         "skipped": skipped,
         "heatmap_labels_csv": display_path(heatmap_csv) if heatmap_rows else "",
+        "death_event_labels_csv": display_path(death_labels_path) if death_rows else "",
         "updated_at": utc_now(),
     }
     write_json(report_path, report)
