@@ -31,11 +31,11 @@ from src.active_learning_workbench import (
 
 
 APP_HTML = """<!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Active Learning Workbench</title>
+  <title>主动学习工作台</title>
   <style>
     :root {
       color-scheme: light;
@@ -172,23 +172,27 @@ APP_HTML = """<!doctype html>
 </head>
 <body>
 <header>
-  <h1>Active Learning Workbench</h1>
-  <span id="appStatus" class="status">loading</span>
-  <button id="refreshButton">Refresh</button>
+  <h1 data-i18n="app.title">主动学习工作台</h1>
+  <span id="appStatus" class="status">加载中</span>
+  <button id="refreshButton" data-i18n="button.refresh">刷新</button>
+  <select id="languageSelect" aria-label="Language">
+    <option value="zh-CN">中文</option>
+    <option value="en">English</option>
+  </select>
   <span id="updatedAt" class="muted"></span>
 </header>
 <main>
   <aside>
     <div class="side-scroll">
-      <h2>Queue</h2>
+      <h2 data-i18n="section.queue">标注队列</h2>
       <div class="toolbar">
         <select id="targetFilter"></select>
         <select id="statusFilter">
-          <option value="">all status</option>
-          <option value="todo">todo</option>
-          <option value="draft">draft</option>
-          <option value="done">done</option>
-          <option value="skipped">skipped</option>
+          <option value="" data-i18n="filter.all_status">全部状态</option>
+          <option value="todo" data-i18n="status.todo">待处理</option>
+          <option value="draft" data-i18n="status.draft">草稿</option>
+          <option value="done" data-i18n="status.done">已完成</option>
+          <option value="skipped" data-i18n="status.skipped">已跳过</option>
         </select>
       </div>
       <div id="queueList" style="margin-top:10px;"></div>
@@ -202,10 +206,10 @@ APP_HTML = """<!doctype html>
       <section class="panel" style="padding:10px;">
         <div class="toolbar" style="justify-content:space-between;">
           <div>
-            <h2 id="candidateTitle">No candidate selected</h2>
+            <h2 id="candidateTitle" data-i18n="candidate.empty">未选择候选样本</h2>
             <div id="candidateMeta" class="tiny"></div>
           </div>
-          <span id="candidateStatus" class="status">idle</span>
+          <span id="candidateStatus" class="status">空闲</span>
         </div>
         <div class="canvas-wrap" style="margin-top:10px;">
           <canvas id="canvas" width="960" height="540"></canvas>
@@ -213,67 +217,67 @@ APP_HTML = """<!doctype html>
       </section>
       <section class="stack">
         <div class="panel" style="padding:10px;">
-          <h2>Annotation</h2>
+          <h2 data-i18n="section.annotation">标注</h2>
           <div class="form-grid">
-            <label>class id<input id="classId" type="number" min="0" value="0"></label>
-            <label>class name<input id="className" placeholder="optional"></label>
-            <label>split<select id="splitInput"><option>train</option><option>val</option></select></label>
-            <label>status<select id="annotationStatus"><option>done</option><option>draft</option></select></label>
+            <label><span data-i18n="label.class_id">类别 ID</span><input id="classId" type="number" min="0" value="0"></label>
+            <label><span data-i18n="label.class_name">类别名称</span><input id="className" data-i18n-placeholder="placeholder.optional" placeholder="可选"></label>
+            <label><span data-i18n="label.split">数据集划分</span><select id="splitInput"><option value="train" data-i18n="split.train">训练</option><option value="val" data-i18n="split.val">验证</option></select></label>
+            <label><span data-i18n="label.status">状态</span><select id="annotationStatus"><option value="done" data-i18n="status.done">已完成</option><option value="draft" data-i18n="status.draft">草稿</option></select></label>
           </div>
-          <label style="margin-top:8px;">text<input id="textInput" placeholder="OCR text or note"></label>
-          <label style="margin-top:8px;">notes<textarea id="notesInput"></textarea></label>
+          <label style="margin-top:8px;"><span data-i18n="label.text">文本</span><input id="textInput" data-i18n-placeholder="placeholder.ocr_text" placeholder="OCR 文本或备注"></label>
+          <label style="margin-top:8px;"><span data-i18n="label.notes">备注</span><textarea id="notesInput"></textarea></label>
           <div class="toolbar" style="margin-top:8px;">
-            <button id="saveAnnotation" class="primary">Save</button>
-            <button id="clearBoxes">Clear</button>
-            <button id="skipCandidate">Skip</button>
+            <button id="saveAnnotation" class="primary" data-i18n="button.save">保存</button>
+            <button id="clearBoxes" data-i18n="button.clear">清空</button>
+            <button id="skipCandidate" data-i18n="button.skip">跳过</button>
           </div>
           <div id="annotationHint" class="tiny" style="margin-top:8px;"></div>
         </div>
         <div class="panel" style="padding:10px;">
-          <h2>Actions</h2>
+          <h2 data-i18n="section.actions">操作</h2>
           <div class="toolbar">
-            <button data-action="refresh_training_candidates">Refresh Candidates</button>
-            <button data-action="validate_training_datasets">Validate Datasets</button>
-            <button data-action="refresh_model_data_readiness">Refresh Readiness</button>
-            <button id="llmPackButton">Build LLM Pack</button>
+            <button data-action="refresh_training_candidates" data-i18n="action.refresh_training_candidates">刷新候选样本</button>
+            <button data-action="validate_training_datasets" data-i18n="action.validate_training_datasets">验证训练集</button>
+            <button data-action="refresh_model_data_readiness" data-i18n="action.refresh_model_data_readiness">刷新就绪状态</button>
+            <button id="llmPackButton" data-i18n="button.llm_pack">生成 LLM 审阅包</button>
           </div>
           <div class="form-grid" style="margin-top:8px;">
-            <label>video<input id="videoInput" placeholder="footages/n_match_6.mp4"></label>
-            <label>match id<input id="matchIdInput" placeholder="n_match_6"></label>
+            <label><span data-i18n="label.video">视频</span><input id="videoInput" placeholder="footages/n_match_6.mp4"></label>
+            <label><span data-i18n="label.match_id">对战 ID</span><input id="matchIdInput" placeholder="n_match_6"></label>
           </div>
           <div class="toolbar" style="margin-top:8px;">
-            <button id="intakeButton">Intake Video</button>
-            <button id="validationButton">Run Validation</button>
-            <label style="display:flex;align-items:center;gap:6px;"><input id="runAnalysis" type="checkbox"> run analysis</label>
+            <button id="intakeButton" data-i18n="action.intake_video">接入视频</button>
+            <button id="validationButton" data-i18n="action.run_validation_suite">运行验证</button>
+            <label style="display:flex;align-items:center;gap:6px;"><input id="runAnalysis" type="checkbox"> <span data-i18n="label.run_analysis">同时跑分析</span></label>
           </div>
           <div class="form-grid" style="margin-top:8px;">
-            <label>training target<select id="trainingTarget">
+            <label><span data-i18n="label.training_target">训练目标</span><select id="trainingTarget">
               <option>ui_detector_yolo</option>
               <option>count_ocr_yolo</option>
               <option>message_ocr_yolo</option>
             </select></label>
-            <label>candidate model<input id="candidateModel" placeholder="outputs/model_training/.../weights/best.pt"></label>
-            <label>model id<input id="modelId" placeholder="ui_detector_yolo"></label>
+            <label><span data-i18n="label.candidate_model">候选模型</span><input id="candidateModel" placeholder="outputs/model_training/.../weights/best.pt"></label>
+            <label><span data-i18n="label.model_id">模型 ID</span><input id="modelId" placeholder="ui_detector_yolo"></label>
           </div>
           <div class="toolbar" style="margin-top:8px;">
-            <button id="trainingDryRun">Training Dry Run</button>
-            <button id="trainingExecute" class="danger">Execute Training</button>
-            <button id="promotionPlan">Promotion Plan</button>
-            <button id="promotionApply" class="danger">Apply Promotion</button>
+            <button id="trainingDryRun" data-i18n="action.training_dry_run">训练预演</button>
+            <button id="trainingExecute" class="danger" data-i18n="action.training_execute">执行训练</button>
+            <button id="promotionPlan" data-i18n="action.promotion_plan">提升计划</button>
+            <button id="promotionApply" class="danger" data-i18n="action.promotion_apply">应用提升</button>
           </div>
         </div>
         <div class="panel" style="padding:10px;">
-          <h2>Apply Staging</h2>
+          <h2 data-i18n="section.apply_staging">应用暂存</h2>
           <div class="toolbar">
-            <button id="applyDryRun">Dry Run</button>
-            <button id="applyReal" class="danger">Apply</button>
+            <button id="applyDryRun" data-i18n="button.dry_run">预演</button>
+            <button id="applyReal" class="danger" data-i18n="button.apply">应用</button>
           </div>
           <pre id="actionOutput"></pre>
         </div>
       </section>
     </div>
     <section class="panel" style="padding:10px;">
-      <h2>Asset Inbox</h2>
+      <h2 data-i18n="section.asset_inbox">素材收件箱</h2>
       <div id="assetInbox" class="grid"></div>
     </section>
   </div>
@@ -282,8 +286,185 @@ APP_HTML = """<!doctype html>
 const state = { app: null, candidates: [], selected: null, image: null, boxes: [], point: null, drag: null };
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+const I18N = {
+  "zh-CN": {
+    "app.title": "主动学习工作台",
+    "button.refresh": "刷新",
+    "section.queue": "标注队列",
+    "section.annotation": "标注",
+    "section.actions": "操作",
+    "section.apply_staging": "应用暂存",
+    "section.asset_inbox": "素材收件箱",
+    "filter.all_status": "全部状态",
+    "filter.all_targets": "全部目标",
+    "candidate.empty": "未选择候选样本",
+    "canvas.empty": "选择一个带图片的候选样本",
+    "label.class_id": "类别 ID",
+    "label.class_name": "类别名称",
+    "label.split": "数据集划分",
+    "label.status": "状态",
+    "label.text": "文本",
+    "label.notes": "备注",
+    "label.video": "视频",
+    "label.match_id": "对战 ID",
+    "label.run_analysis": "同时跑分析",
+    "label.training_target": "训练目标",
+    "label.candidate_model": "候选模型",
+    "label.model_id": "模型 ID",
+    "placeholder.optional": "可选",
+    "placeholder.ocr_text": "OCR 文本或备注",
+    "split.train": "训练",
+    "split.val": "验证",
+    "button.save": "保存",
+    "button.clear": "清空",
+    "button.skip": "跳过",
+    "button.llm_pack": "生成 LLM 审阅包",
+    "button.dry_run": "预演",
+    "button.apply": "应用",
+    "button.use": "使用",
+    "action.refresh_training_candidates": "刷新候选样本",
+    "action.validate_training_datasets": "验证训练集",
+    "action.refresh_model_data_readiness": "刷新就绪状态",
+    "action.intake_video": "接入视频",
+    "action.run_validation_suite": "运行验证",
+    "action.training_dry_run": "训练预演",
+    "action.training_execute": "执行训练",
+    "action.promotion_plan": "提升计划",
+    "action.promotion_apply": "应用提升",
+    "message.running": "正在运行",
+    "message.llm_prefix": "LLM 建议",
+    "confirm.training": "要开始训练这个目标吗？",
+    "confirm.promotion": "要把候选模型应用到登记的正式模型路径吗？",
+    "confirm.apply_staging": "要把已完成的暂存标注写入训练集吗？",
+    "status.loading": "加载中",
+    "status.idle": "空闲",
+    "status.missing": "缺失",
+    "status.ready": "就绪",
+    "status.passed": "通过",
+    "status.completed": "完成",
+    "status.promoted": "已提升",
+    "status.needs_attention": "需要关注",
+    "status.needs_review": "需要复核",
+    "status.needs_data": "缺数据",
+    "status.needs_labels": "需标注",
+    "status.needs_human": "需人工",
+    "status.has_drafts": "有草稿",
+    "status.failed": "失败",
+    "status.blocked": "阻塞",
+    "status.timeout": "超时",
+    "status.todo": "待处理",
+    "status.draft": "草稿",
+    "status.done": "已完成",
+    "status.skipped": "已跳过",
+    "status.new": "新素材",
+    "status.registered": "已登记",
+    "target.ui_detector_yolo": "UI 检测 YOLO",
+    "target.count_ocr_yolo": "数字 OCR YOLO",
+    "target.message_ocr_yolo": "消息 OCR YOLO",
+    "target.weapon_classifier_resnet18": "武器分类器",
+    "target.heatmap_tracker_labels": "热力图轨迹标注"
+  },
+  en: {
+    "app.title": "Active Learning Workbench",
+    "button.refresh": "Refresh",
+    "section.queue": "Queue",
+    "section.annotation": "Annotation",
+    "section.actions": "Actions",
+    "section.apply_staging": "Apply Staging",
+    "section.asset_inbox": "Asset Inbox",
+    "filter.all_status": "all status",
+    "filter.all_targets": "all targets",
+    "candidate.empty": "No candidate selected",
+    "canvas.empty": "Select a candidate with an image",
+    "label.class_id": "class id",
+    "label.class_name": "class name",
+    "label.split": "split",
+    "label.status": "status",
+    "label.text": "text",
+    "label.notes": "notes",
+    "label.video": "video",
+    "label.match_id": "match id",
+    "label.run_analysis": "run analysis",
+    "label.training_target": "training target",
+    "label.candidate_model": "candidate model",
+    "label.model_id": "model id",
+    "placeholder.optional": "optional",
+    "placeholder.ocr_text": "OCR text or note",
+    "split.train": "train",
+    "split.val": "val",
+    "button.save": "Save",
+    "button.clear": "Clear",
+    "button.skip": "Skip",
+    "button.llm_pack": "Build LLM Pack",
+    "button.dry_run": "Dry Run",
+    "button.apply": "Apply",
+    "button.use": "Use",
+    "action.refresh_training_candidates": "Refresh Candidates",
+    "action.validate_training_datasets": "Validate Datasets",
+    "action.refresh_model_data_readiness": "Refresh Readiness",
+    "action.intake_video": "Intake Video",
+    "action.run_validation_suite": "Run Validation",
+    "action.training_dry_run": "Training Dry Run",
+    "action.training_execute": "Execute Training",
+    "action.promotion_plan": "Promotion Plan",
+    "action.promotion_apply": "Apply Promotion",
+    "message.running": "running",
+    "message.llm_prefix": "LLM",
+    "confirm.training": "Start training for this target?",
+    "confirm.promotion": "Apply candidate model to the registered path?",
+    "confirm.apply_staging": "Apply done staging annotations into training datasets?",
+    "status.loading": "loading",
+    "status.idle": "idle",
+    "status.missing": "missing",
+    "status.ready": "ready",
+    "status.passed": "passed",
+    "status.completed": "completed",
+    "status.promoted": "promoted",
+    "status.needs_attention": "needs attention",
+    "status.needs_review": "needs review",
+    "status.needs_data": "needs data",
+    "status.needs_labels": "needs labels",
+    "status.needs_human": "needs human",
+    "status.has_drafts": "has drafts",
+    "status.failed": "failed",
+    "status.blocked": "blocked",
+    "status.timeout": "timeout",
+    "status.todo": "todo",
+    "status.draft": "draft",
+    "status.done": "done",
+    "status.skipped": "skipped",
+    "status.new": "new",
+    "status.registered": "registered",
+    "target.ui_detector_yolo": "UI detector YOLO",
+    "target.count_ocr_yolo": "count OCR YOLO",
+    "target.message_ocr_yolo": "message OCR YOLO",
+    "target.weapon_classifier_resnet18": "weapon classifier",
+    "target.heatmap_tracker_labels": "heatmap tracker labels"
+  }
+};
+let language = localStorage.getItem("workbenchLanguage") || "zh-CN";
+if (!I18N[language]) language = "zh-CN";
 
 function cls(status) { return "status " + String(status || "missing"); }
+function t(key) {
+  return (I18N[language] && I18N[language][key]) || I18N.en[key] || key;
+}
+function statusLabel(status) {
+  return t("status." + String(status || "missing"));
+}
+function targetLabel(target) {
+  return t("target." + target) || target;
+}
+function reportTitle(report) {
+  return language === "zh-CN" ? (report.title_zh || report.title) : report.title;
+}
+function translateStatic() {
+  document.documentElement.lang = language;
+  document.title = t("app.title");
+  document.getElementById("languageSelect").value = language;
+  document.querySelectorAll("[data-i18n]").forEach(node => { node.textContent = t(node.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(node => { node.placeholder = t(node.dataset.i18nPlaceholder); });
+}
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 }
@@ -306,8 +487,9 @@ async function loadAll() {
   render();
 }
 function render() {
+  translateStatic();
   document.getElementById("appStatus").className = cls(state.app.status);
-  document.getElementById("appStatus").textContent = state.app.status;
+  document.getElementById("appStatus").textContent = statusLabel(state.app.status);
   document.getElementById("updatedAt").textContent = state.app.updated_at || "";
   renderReports();
   renderInbox();
@@ -319,9 +501,9 @@ function renderReports() {
   const root = document.getElementById("reports");
   root.innerHTML = state.app.reports.map(report => `
     <div class="report">
-      <strong>${escapeHtml(report.title)}</strong>
-      <span class="${cls(report.status)}">${escapeHtml(report.status)}</span>
-      <div class="tiny" style="margin-top:6px;">${escapeHtml(report.path || "missing")}</div>
+      <strong>${escapeHtml(reportTitle(report))}</strong>
+      <span class="${cls(report.status)}">${escapeHtml(statusLabel(report.status))}</span>
+      <div class="tiny" style="margin-top:6px;">${escapeHtml(report.path || t("status.missing"))}</div>
     </div>`).join("");
 }
 function renderInbox() {
@@ -329,9 +511,9 @@ function renderInbox() {
   document.getElementById("assetInbox").innerHTML = inbox.videos.map(item => `
     <div class="report">
       <strong>${escapeHtml(item.suggested_match_id)}</strong>
-      <span class="${cls(item.status)}">${escapeHtml(item.status)}</span>
+      <span class="${cls(item.status)}">${escapeHtml(statusLabel(item.status))}</span>
       <div class="tiny" style="margin-top:6px;">${escapeHtml(item.path)}</div>
-      ${item.status === "new" ? `<button style="margin-top:8px;" onclick="prefillIntake('${escapeHtml(item.path)}','${escapeHtml(item.suggested_match_id)}')">Use</button>` : ""}
+      ${item.status === "new" ? `<button style="margin-top:8px;" onclick="prefillIntake('${escapeHtml(item.path)}','${escapeHtml(item.suggested_match_id)}')">${escapeHtml(t("button.use"))}</button>` : ""}
     </div>`).join("");
 }
 function prefillIntake(path, matchId) {
@@ -342,7 +524,7 @@ function renderQueueFilters() {
   const select = document.getElementById("targetFilter");
   const targets = [...new Set(state.candidates.map(item => item.target))].sort();
   const current = select.value;
-  select.innerHTML = `<option value="">all targets</option>` + targets.map(target => `<option>${escapeHtml(target)}</option>`).join("");
+  select.innerHTML = `<option value="">${escapeHtml(t("filter.all_targets"))}</option>` + targets.map(target => `<option value="${escapeHtml(target)}">${escapeHtml(targetLabel(target))}</option>`).join("");
   select.value = current;
 }
 function renderQueue() {
@@ -351,8 +533,8 @@ function renderQueue() {
   const items = state.candidates.filter(item => (!target || item.target === target) && (!status || item.status === status));
   document.getElementById("queueList").innerHTML = items.slice(0, 180).map(item => `
     <button class="queue-item ${state.selected && state.selected.id === item.id ? "active" : ""}" onclick="selectCandidate('${escapeHtml(item.id)}')">
-      <strong>${escapeHtml(item.target)}</strong>
-      <span class="${cls(item.status)}" style="float:right;">${escapeHtml(item.status)}</span>
+      <strong>${escapeHtml(targetLabel(item.target))}</strong>
+      <span class="${cls(item.status)}" style="float:right;">${escapeHtml(statusLabel(item.status))}</span>
       <div class="tiny">${escapeHtml(item.reason)} ${escapeHtml(item.match_id)} ${escapeHtml(item.elapsed_time)}</div>
     </button>`).join("");
 }
@@ -382,12 +564,12 @@ function selectCandidate(id) {
 }
 function renderCandidateHeader() {
   const item = state.selected;
-  document.getElementById("candidateTitle").textContent = item ? item.id : "No candidate selected";
+  document.getElementById("candidateTitle").textContent = item ? item.id : t("candidate.empty");
   document.getElementById("candidateMeta").textContent = item ? `${item.target} | ${item.reason} | ${item.frame_path || item.preview_path || ""}` : "";
   document.getElementById("candidateStatus").className = cls(item ? item.status : "idle");
-  document.getElementById("candidateStatus").textContent = item ? item.status : "idle";
+  document.getElementById("candidateStatus").textContent = statusLabel(item ? item.status : "idle");
   const review = item && item.llm_review ? item.llm_review : {};
-  document.getElementById("annotationHint").textContent = review.suggestion ? `LLM: ${review.suggestion} (${review.confidence ?? ""})` : "";
+  document.getElementById("annotationHint").textContent = review.suggestion ? `${t("message.llm_prefix")}: ${review.suggestion} (${review.confidence ?? ""})` : "";
 }
 function fitCanvas(image) {
   const maxWidth = 980;
@@ -401,7 +583,7 @@ function drawCanvas(extraBox = null) {
     ctx.fillStyle = "#101820";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#d7dde2";
-    ctx.fillText("Select a candidate with an image", 24, 32);
+    ctx.fillText(t("canvas.empty"), 24, 32);
     return;
   }
   ctx.drawImage(state.image, 0, 0, canvas.width, canvas.height);
@@ -515,7 +697,7 @@ document.getElementById("skipCandidate").onclick = async () => {
   await loadAll();
 };
 async function runAction(action_id, payload = {}) {
-  document.getElementById("actionOutput").textContent = "running " + action_id;
+  document.getElementById("actionOutput").textContent = `${t("message.running")} ${action_id}`;
   try {
     const result = await postJson("/api/action", { action_id, payload });
     document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
@@ -535,14 +717,14 @@ document.getElementById("intakeButton").onclick = () => runAction("intake_video"
 });
 document.getElementById("trainingDryRun").onclick = () => runAction("training_dry_run", { target: document.getElementById("trainingTarget").value });
 document.getElementById("trainingExecute").onclick = () => {
-  if (confirm("Start training for this target?")) runAction("training_execute", { target: document.getElementById("trainingTarget").value, confirm: "execute_training" });
+  if (confirm(t("confirm.training"))) runAction("training_execute", { target: document.getElementById("trainingTarget").value, confirm: "execute_training" });
 };
 document.getElementById("promotionPlan").onclick = () => runAction("promotion_plan", {
   model_id: document.getElementById("modelId").value,
   candidate: document.getElementById("candidateModel").value
 });
 document.getElementById("promotionApply").onclick = () => {
-  if (confirm("Apply candidate model to the registered path?")) runAction("promotion_apply", {
+  if (confirm(t("confirm.promotion"))) runAction("promotion_apply", {
     model_id: document.getElementById("modelId").value,
     candidate: document.getElementById("candidateModel").value,
     confirm: "apply_promotion"
@@ -557,10 +739,15 @@ document.getElementById("applyDryRun").onclick = async () => {
   document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
 };
 document.getElementById("applyReal").onclick = async () => {
-  if (!confirm("Apply done staging annotations into training datasets?")) return;
+  if (!confirm(t("confirm.apply_staging"))) return;
   const result = await postJson("/api/apply-staging", { dry_run: false });
   document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
   await loadAll();
+};
+document.getElementById("languageSelect").onchange = event => {
+  language = event.target.value;
+  localStorage.setItem("workbenchLanguage", language);
+  render();
 };
 document.getElementById("refreshButton").onclick = loadAll;
 document.getElementById("targetFilter").onchange = renderQueue;

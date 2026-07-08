@@ -28,38 +28,45 @@ REPORT_SPECS: tuple[dict[str, Any], ...] = (
     {
         "id": "validation_suite",
         "title": "Validation Suite",
+        "title_zh": "验证套件",
         "paths": ["outputs/validation_suite.json"],
         "action": "run_validation_suite",
     },
     {
         "id": "validation_samples",
         "title": "Validation Samples",
+        "title_zh": "验证样本",
         "paths": ["outputs/validation_suite/validation_samples.json", "outputs/goal2_validation_samples.json"],
     },
     {
         "id": "model_errors",
         "title": "Model Errors",
+        "title_zh": "模型错误",
         "paths": ["outputs/validation_suite/model_error_report_smoothed.json", "outputs/model_error_report_smoothed.json"],
     },
     {
         "id": "training_candidates",
         "title": "Training Candidates",
+        "title_zh": "训练候选样本",
         "paths": ["outputs/training_sample_candidates/manifest.json", "outputs/training_sample_candidates.json"],
         "action": "refresh_training_candidates",
     },
     {
         "id": "heatmap_labels",
         "title": "Heatmap Labels",
+        "title_zh": "热力图标注",
         "paths": ["outputs/heatmap_annotation_round1.json", "outputs/heatmap_annotation_round_goal4.json"],
     },
     {
         "id": "heatmap_comparison",
         "title": "Heatmap Comparison",
+        "title_zh": "热力图对比",
         "paths": ["outputs/validation_suite/heatmap_comparison.json", "outputs/heatmap_comparison.json"],
     },
     {
         "id": "training_datasets",
         "title": "Training Datasets",
+        "title_zh": "训练数据集",
         "paths": [
             "outputs/validation_suite/model_training_datasets.json",
             "outputs/model_training_datasets.json",
@@ -70,22 +77,26 @@ REPORT_SPECS: tuple[dict[str, Any], ...] = (
     {
         "id": "model_data_readiness",
         "title": "Model/Data Readiness",
+        "title_zh": "模型/数据就绪",
         "paths": ["outputs/model_data_readiness.json", "outputs/model_experiment_baseline_goal7/model_data_readiness.json"],
         "action": "refresh_model_data_readiness",
     },
     {
         "id": "model_registry",
         "title": "Model Registry",
+        "title_zh": "模型登记表",
         "paths": ["outputs/validation_suite/model_registry.json", "outputs/model_registry.json"],
     },
     {
         "id": "runtime_benchmarks",
         "title": "Runtime Benchmarks",
+        "title_zh": "运行时基准",
         "paths": ["outputs/runtime/runtime_benchmarks.json", "outputs/goal2_runtime_benchmarks.json"],
     },
     {
         "id": "model_baseline",
         "title": "Model Baseline",
+        "title_zh": "模型基线",
         "paths": [
             "outputs/model_benchmarks/baseline_snapshot.json",
             "outputs/model_experiment_baseline_goal7/baseline_snapshot.json",
@@ -95,6 +106,7 @@ REPORT_SPECS: tuple[dict[str, Any], ...] = (
     {
         "id": "promotion_plan",
         "title": "Promotion Plan",
+        "title_zh": "模型提升计划",
         "paths": ["outputs/model_promotion_plan.json", "outputs/goal3_model_promotion_plan.json"],
         "action": "promotion_plan",
     },
@@ -134,29 +146,85 @@ class ActionDefinition:
     description: str
     needs_confirmation: bool = False
     long_running: bool = False
+    label_zh: str = ""
+    description_zh: str = ""
 
 
 ACTION_DEFINITIONS: tuple[ActionDefinition, ...] = (
-    ActionDefinition("refresh_training_candidates", "Refresh Candidates", "Rebuild failed-sample candidate queues."),
-    ActionDefinition("run_validation_suite", "Run Validation", "Run validation suite; optionally rerun analysis.", long_running=True),
-    ActionDefinition("intake_video", "Intake Video", "Register one new video and optionally scan analysis windows."),
-    ActionDefinition("validate_training_datasets", "Validate Datasets", "Check configured model training datasets."),
-    ActionDefinition("refresh_model_data_readiness", "Refresh Readiness", "Refresh model/data readiness report."),
-    ActionDefinition("training_dry_run", "Training Dry Run", "Build launch plan for a configured training target."),
+    ActionDefinition(
+        "refresh_training_candidates",
+        "Refresh Candidates",
+        "Rebuild failed-sample candidate queues.",
+        label_zh="刷新候选样本",
+        description_zh="重新生成失败样本候选队列。",
+    ),
+    ActionDefinition(
+        "run_validation_suite",
+        "Run Validation",
+        "Run validation suite; optionally rerun analysis.",
+        long_running=True,
+        label_zh="运行验证",
+        description_zh="运行验证套件，可选择重新分析。",
+    ),
+    ActionDefinition(
+        "intake_video",
+        "Intake Video",
+        "Register one new video and optionally scan analysis windows.",
+        label_zh="接入视频",
+        description_zh="登记一个新视频，并可选扫描分析窗口。",
+    ),
+    ActionDefinition(
+        "validate_training_datasets",
+        "Validate Datasets",
+        "Check configured model training datasets.",
+        label_zh="验证训练集",
+        description_zh="检查已配置的模型训练数据集。",
+    ),
+    ActionDefinition(
+        "refresh_model_data_readiness",
+        "Refresh Readiness",
+        "Refresh model/data readiness report.",
+        label_zh="刷新就绪状态",
+        description_zh="刷新模型/数据就绪报告。",
+    ),
+    ActionDefinition(
+        "training_dry_run",
+        "Training Dry Run",
+        "Build launch plan for a configured training target.",
+        label_zh="训练预演",
+        description_zh="为指定训练目标生成启动计划。",
+    ),
     ActionDefinition(
         "training_execute",
         "Execute Training",
         "Run the configured training command for a target.",
         needs_confirmation=True,
         long_running=True,
+        label_zh="执行训练",
+        description_zh="运行指定训练目标的配置命令。",
     ),
-    ActionDefinition("run_model_baseline", "Run Baseline", "Generate a model experiment baseline package.", long_running=True),
-    ActionDefinition("promotion_plan", "Promotion Plan", "Build a candidate model promotion plan."),
+    ActionDefinition(
+        "run_model_baseline",
+        "Run Baseline",
+        "Generate a model experiment baseline package.",
+        long_running=True,
+        label_zh="运行基线",
+        description_zh="生成模型实验基线包。",
+    ),
+    ActionDefinition(
+        "promotion_plan",
+        "Promotion Plan",
+        "Build a candidate model promotion plan.",
+        label_zh="提升计划",
+        description_zh="生成候选模型提升计划。",
+    ),
     ActionDefinition(
         "promotion_apply",
         "Apply Promotion",
         "Copy a validated candidate into the registered model path.",
         needs_confirmation=True,
+        label_zh="应用提升",
+        description_zh="把已验证候选模型复制到登记的正式模型路径。",
     ),
 )
 
@@ -256,6 +324,7 @@ def load_report_summaries(root: Path = ROOT) -> list[dict[str, Any]]:
             {
                 "id": spec["id"],
                 "title": spec["title"],
+                "title_zh": spec.get("title_zh", spec["title"]),
                 "status": payload_status(payload) if path else "missing",
                 "path": display_path(path) if path else "",
                 "action": spec.get("action", ""),

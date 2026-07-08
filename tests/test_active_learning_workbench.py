@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from src.active_learning_workbench import (
+    action_catalog,
     apply_staging_annotations,
     build_llm_review_pack,
     command_for_action,
@@ -13,6 +14,7 @@ from src.active_learning_workbench import (
     validate_staging_item,
     write_json,
 )
+from scripts.serve_active_learning_workbench import APP_HTML
 
 
 class ActiveLearningWorkbenchTests(unittest.TestCase):
@@ -158,6 +160,17 @@ class ActiveLearningWorkbenchTests(unittest.TestCase):
 
         self.assertEqual(inbox["status"], "needs_intake")
         self.assertEqual(inbox["new_count"], 1)
+
+    def test_action_catalog_includes_chinese_labels(self):
+        actions = {item["id"]: item for item in action_catalog()}
+
+        self.assertEqual(actions["refresh_training_candidates"]["label_zh"], "刷新候选样本")
+        self.assertEqual(actions["promotion_apply"]["description_zh"], "把已验证候选模型复制到登记的正式模型路径。")
+
+    def test_workbench_html_defaults_to_chinese(self):
+        self.assertIn('<html lang="zh-CN">', APP_HTML)
+        self.assertIn("主动学习工作台", APP_HTML)
+        self.assertIn('id="languageSelect"', APP_HTML)
 
 
 if __name__ == "__main__":
