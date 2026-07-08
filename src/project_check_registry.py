@@ -229,6 +229,7 @@ def tooling_smoke_steps(python: Path, work_dir: Path, match_video: str, device: 
                 work_dir / "heatmap_quality_loop.json",
             ],
         ),
+        CheckStep("active learning workbench helper", [python, "scripts/serve_active_learning_workbench.py", "--help"]),
     ]
 
 

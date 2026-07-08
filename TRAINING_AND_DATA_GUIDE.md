@@ -78,6 +78,10 @@ python scripts/report_model_data_readiness.py \
   --json-output outputs/model_data_readiness.json
 ```
 
+## Web 工作台
+
+新增素材、失败样本标注、staging 入库、训练 dry-run 和模型提升现在可以通过本地 Web 工作台串起来。详见 [ACTIVE_LEARNING_WORKBENCH.md](ACTIVE_LEARNING_WORKBENCH.md)。
+
 当前 readiness 的硬门槛之一是至少 30 条真实热力图标注。没有这些标签时，不建议急着换 YOLO/OCR/热力图 detector，因为指标还不够稳。
 
 ## 武器分类器：新增数据后重新训练
