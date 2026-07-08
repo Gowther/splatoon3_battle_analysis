@@ -62,10 +62,10 @@ def missing_runtime_files(root: Path) -> list[str]:
 
 def project_script_files(root: Path) -> list[str]:
     matches: list[str] = []
-    for path in top_level_files(root):
-        if path.suffix != ".py":
-            continue
-        if path.name not in ALLOWED_TOP_LEVEL_PY:
+    if not root.exists():
+        return matches
+    for path in sorted(root.rglob("*.py"), key=lambda item: relative_path(root, item)):
+        if path.parent == root and path.name not in ALLOWED_TOP_LEVEL_PY:
             matches.append(relative_path(root, path))
             continue
         if any(fnmatch.fnmatch(path.name, pattern) for pattern in PROJECT_SCRIPT_PATTERNS):

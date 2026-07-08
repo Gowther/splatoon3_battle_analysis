@@ -58,6 +58,18 @@ class ProjectHygieneTests(unittest.TestCase):
         self.assertEqual(report["status"], "passed")
         self.assertEqual(report["stray_pycache_dirs"], ["src/__pycache__"])
 
+    def test_active_boundary_import_needs_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            touch(root / "src" / "uses_legacy.py")
+            (root / "src" / "uses_legacy.py").write_text("from legacy.foo import bar\n", encoding="utf-8")
+
+            report = build_hygiene_report(root)
+
+        self.assertEqual(report["status"], "needs_review")
+        self.assertIn("src/uses_legacy.py:1", report["boundary_imports"][0])
+        self.assertIn("boundary_imports", {issue["category"] for issue in report["issues"]})
+
     def test_render_markdown_includes_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             report = build_hygiene_report(Path(tmp))
@@ -66,6 +78,7 @@ class ProjectHygieneTests(unittest.TestCase):
 
         self.assertIn("# Project Hygiene Report", markdown)
         self.assertIn("- status: `passed`", markdown)
+        self.assertIn("## Boundary Contract", markdown)
 
 
 if __name__ == "__main__":

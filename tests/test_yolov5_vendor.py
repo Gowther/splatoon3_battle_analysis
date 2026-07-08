@@ -53,6 +53,25 @@ class Yolov5VendorTests(unittest.TestCase):
         self.assertEqual(report["status"], "failed")
         self.assertEqual(report["project_script_files"], ["230111_run_analysis.py"])
 
+    def test_nested_project_scripts_inside_vendor_are_blockers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for relative in (
+                "hubconf.py",
+                "models/common.py",
+                "models/experimental.py",
+                "models/yolo.py",
+                "utils/general.py",
+                "utils/torch_utils.py",
+                "utils/240101_run_analysis.py",
+            ):
+                touch(root, relative)
+
+            report = build_vendor_report(root)
+
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["project_script_files"], ["utils/240101_run_analysis.py"])
+
     def test_ensure_vendor_ready_raises_with_missing_runtime_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(FileNotFoundError):

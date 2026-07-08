@@ -52,6 +52,9 @@ PYTHON_CACHE_EXCLUDES = {
     ".venv",
 }
 
+ACTIVE_IMPORT_SCAN_ROOTS = ("src", "scripts")
+BOUNDARY_IMPORT_PREFIXES = ("legacy", "yolov5")
+
 
 def display_path(root: Path, path: Path) -> str:
     try:
@@ -123,6 +126,33 @@ def find_stray_pycache_dirs(root: Path, limit: int = 50) -> list[str]:
     return sorted(found)
 
 
+def active_boundary_imports(root: Path, limit: int = 50) -> list[str]:
+    matches: list[str] = []
+    for dirname in ACTIVE_IMPORT_SCAN_ROOTS:
+        scan_root = root / dirname
+        if not scan_root.exists():
+            continue
+        for path in sorted(scan_root.rglob("*.py")):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            for line_number, line in enumerate(text.splitlines(), start=1):
+                stripped = line.strip()
+                if any(
+                    stripped == f"import {name}"
+                    or stripped.startswith(f"import {name}.")
+                    or stripped.startswith(f"from {name} ")
+                    or stripped.startswith(f"from {name}.")
+                    for name in BOUNDARY_IMPORT_PREFIXES
+                ):
+                    matches.append(f"{display_path(root, path)}:{line_number}: {stripped}")
+                    break
+            if len(matches) >= limit:
+                return matches
+    return matches
+
+
 def issue(severity: str, category: str, detail: str, items: list[str]) -> dict[str, Any]:
     return {"severity": severity, "category": category, "detail": detail, "items": items}
 
@@ -132,6 +162,7 @@ def build_hygiene_report(root: Path) -> dict[str, Any]:
     unexpected = unexpected_root_entries(root)
     generated = generated_root_files(root)
     stray_pycache = find_stray_pycache_dirs(root)
+    boundary_imports = active_boundary_imports(root)
 
     local_data = {
         name: {"exists": (root / name).exists(), "file_count": directory_file_count(root / name)}
@@ -149,6 +180,15 @@ def build_hygiene_report(root: Path) -> dict[str, Any]:
         issues.append(issue("warning", "generated_outputs", "generated root-level files should live under outputs/", generated))
     if stray_pycache:
         issues.append(issue("info", "python_cache", "stray __pycache__ directories outside .cache/.venv", stray_pycache))
+    if boundary_imports:
+        issues.append(
+            issue(
+                "warning",
+                "boundary_imports",
+                "active code should not import legacy or vendored yolov5 packages directly",
+                boundary_imports,
+            )
+        )
     if legacy_references.get(".models", {}).get("exists"):
         issues.append(
             issue(
@@ -166,7 +206,14 @@ def build_hygiene_report(root: Path) -> dict[str, Any]:
         "unexpected_root_entries": unexpected,
         "generated_root_files": generated,
         "stray_pycache_dirs": stray_pycache,
+        "boundary_imports": boundary_imports,
         "active_roots": sorted(ACTIVE_ROOT_DIRS),
+        "boundary_contract": {
+            "active_code": sorted(ACTIVE_ROOT_DIRS - {"yolov5"}),
+            "vendored_runtime": ["yolov5"],
+            "legacy_reference": sorted(LEGACY_REFERENCE_ROOTS),
+            "local_data": sorted(LOCAL_DATA_ROOTS),
+        },
         "local_data": local_data,
         "legacy_references": legacy_references,
         "issues": issues,
@@ -181,6 +228,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- unexpected_root_entries: {len(report['unexpected_root_entries'])}",
         f"- generated_root_files: {len(report['generated_root_files'])}",
         f"- stray_pycache_dirs: {len(report['stray_pycache_dirs'])}",
+        f"- boundary_imports: {len(report.get('boundary_imports', []))}",
         "",
         "## Issues",
         "",
@@ -194,6 +242,12 @@ def render_markdown(report: dict[str, Any]) -> str:
                 lines.append(f"  - `{path}`")
             if len(item["items"]) > 10:
                 lines.append(f"  - ... {len(item['items']) - 10} more")
+
+    contract = report.get("boundary_contract", {})
+    lines.extend(["", "## Boundary Contract", ""])
+    for name in ("active_code", "vendored_runtime", "legacy_reference", "local_data"):
+        values = ", ".join(f"`{value}`" for value in contract.get(name, []))
+        lines.append(f"- {name}: {values or '-'}")
 
     lines.extend(["", "## Local Data Roots", "", "| path | exists | files |", "| --- | --- | ---: |"])
     for name, info in report["local_data"].items():
