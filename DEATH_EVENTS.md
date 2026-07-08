@@ -119,3 +119,36 @@ python scripts/export_death_event_windows.py \
 ```
 
 导出的 manifest 是后续 death screen OCR、Web 标注、归因和自动剪辑的共同素材入口。
+
+## Goal 3: 生成死亡 OCR 候选队列
+
+Goal 3 新增命令：
+
+```bash
+python scripts/build_death_ocr_candidates.py \
+  --asset-manifest outputs/death_events/assets/death_event_assets.csv
+```
+
+默认输出：
+
+- `outputs/death_events/ocr_candidates/death_ocr_candidates.csv`
+- `outputs/death_events/ocr_candidates/death_ocr_candidates.json`
+- `outputs/death_events/ocr_candidates/crops/<region>/*.jpg`
+
+默认裁三个候选区域：
+
+- `kill_log_right`: 画面右侧击杀日志候选区。
+- `death_message_center`: 中央死亡提示候选区。
+- `full_death_screen`: 全画面兜底候选区。
+
+候选 CSV 保留现有 Web 工作台可识别的通用字段：
+
+- `candidate_id`
+- `target=death_event_ocr`
+- `reason`
+- `match_id`
+- `elapsed_time`
+- `frame_path`
+- `details`
+
+其中 `frame_path` 指向已经裁好的 OCR crop，`source_frame_path` 保留原始复核帧路径。
