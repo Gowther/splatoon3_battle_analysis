@@ -271,3 +271,35 @@ python scripts/build_replay_clips.py \
 - 每个 death event 的复盘片段。
 - 同一个 killer 在短时间内造成多次死亡的 `multi_kill_candidate`。
 - `score`，用于排序精彩击杀候选。
+
+## Goal 8: 多来源复盘时间线
+
+Goal 8 新增命令：
+
+```bash
+python scripts/build_replay_timeline.py \
+  --events-csv outputs/death_events/attributed_death_events.csv \
+  --source-id main \
+  --time-offset 0 \
+  --clips-csv outputs/replay_clips/replay_clips.csv
+```
+
+多个来源可以重复传入：
+
+```bash
+python scripts/build_replay_timeline.py \
+  --events-csv outputs/death_events/main_attributed.csv --source-id main --time-offset 0 \
+  --events-csv outputs/death_events/pov_attributed.csv --source-id pov --time-offset -2.35
+```
+
+默认输出：
+
+- `outputs/replay_timeline/replay_timeline.csv`
+- `outputs/replay_timeline/replay_timeline.json`
+
+对齐规则：
+
+- `unified_time = local_time + time_offset`
+- 相同 `event_id` 会合并。
+- 没有相同 `event_id` 时，事件类型、killer、victim、weapon 相同且在 `--merge-window-seconds` 内也会合并。
+- 可附加 Goal 7 的 `replay_clips.csv`，在时间线里带上 `clip_ids` 和 `clip_paths`。
