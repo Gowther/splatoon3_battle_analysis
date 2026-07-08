@@ -18,6 +18,7 @@ from src.weapon_training import (
     summarize_dataset,
     summary_as_json,
     train_classifier,
+    validate_training_checkpoint,
     write_labels,
 )
 
@@ -31,6 +32,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--labels", default="main_weapon_list.txt", help="Class label list written beside the model.")
     parser.add_argument("--output", default="models/main_weapons_classification_weight.pth", help="Output .pth model.")
     parser.add_argument("--metrics", default="outputs/weapon_training_metrics.json", help="Training metrics JSON.")
+    parser.add_argument("--checkpoint-output", default="outputs/weapon_training_checkpoint.pt", help="Resume checkpoint.")
+    parser.add_argument("--resume-checkpoint", help="Resume from a previous training checkpoint.")
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "mps", "cuda"])
@@ -61,7 +64,13 @@ def main() -> int:
     output_path = project_path(args.output)
     metrics_path = project_path(args.metrics)
     initial_model_path = project_path(args.initial_model) if args.initial_model else None
+    checkpoint_output_path = project_path(args.checkpoint_output) if args.checkpoint_output else None
+    resume_checkpoint_path = project_path(args.resume_checkpoint) if args.resume_checkpoint else None
     summary = summarize_dataset(dataset, labels_path, model_path("main_weapons_classification_weight.pth"))
+
+    if initial_model_path and resume_checkpoint_path:
+        print("error: --initial-model and --resume-checkpoint cannot be used together.")
+        return 1
 
     if args.json:
         print(summary_as_json(summary), end="")
@@ -77,6 +86,10 @@ def main() -> int:
         print(f"device: {args.device}")
         if initial_model_path:
             print(f"initial model: {initial_model_path}")
+        if resume_checkpoint_path:
+            print(f"resume checkpoint: {resume_checkpoint_path}")
+        if checkpoint_output_path:
+            print(f"checkpoint output: {checkpoint_output_path}")
         print(f"output: {output_path}")
         print(f"metrics: {metrics_path}")
 
@@ -105,6 +118,19 @@ def main() -> int:
             print(f"error: {exc}")
             return 1
 
+    if resume_checkpoint_path:
+        try:
+            checkpoint = validate_training_checkpoint(resume_checkpoint_path, len(class_names))
+        except ValueError as exc:
+            print(f"error: {exc}")
+            return 1
+        print(
+            "checkpoint: "
+            f"epoch={checkpoint['epoch']} "
+            f"class_count={checkpoint['class_count']} "
+            f"best_val_accuracy={checkpoint['best_val_accuracy']:.4f}"
+        )
+
     if args.dry_run:
         print("status: dry run only; no training executed")
         return 0
@@ -128,6 +154,8 @@ def main() -> int:
         args.seed,
         args.max_samples_per_class,
         initial_model_path,
+        checkpoint_output_path,
+        resume_checkpoint_path,
     )
     print(f"wrote model: {output_path}")
     print(f"wrote metrics: {metrics_path}")

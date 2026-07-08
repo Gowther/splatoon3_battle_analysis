@@ -160,8 +160,98 @@ def load_initial_classifier(path: Path, expected_classes: int) -> nn.Module:
     if output_classes != expected_classes:
         raise ValueError(
             f"Initial model output classes ({output_classes}) do not match dataset classes ({expected_classes})."
-        )
+    )
     return model
+
+
+def optimizer_state_to_device(optimizer: optim.Optimizer, device: torch.device) -> None:
+    for state in optimizer.state.values():
+        for key, value in state.items():
+            if torch.is_tensor(value):
+                state[key] = value.to(device)
+
+
+def state_dict_to_cpu(state_dict: dict[str, Any]) -> dict[str, Any]:
+    return {key: value.detach().cpu() if torch.is_tensor(value) else value for key, value in state_dict.items()}
+
+
+def read_training_checkpoint(path: Path) -> dict[str, Any]:
+    checkpoint = load_torch_model(path, "cpu")
+    if not isinstance(checkpoint, dict) or "model_state_dict" not in checkpoint:
+        raise ValueError("Training checkpoint must be a dict with model_state_dict.")
+    return checkpoint
+
+
+def validate_training_checkpoint(path: Path, expected_classes: int) -> dict[str, Any]:
+    checkpoint = read_training_checkpoint(path)
+    class_count = int(checkpoint.get("class_count", 0))
+    if class_count != expected_classes:
+        raise ValueError(f"Checkpoint class count ({class_count}) does not match dataset classes ({expected_classes}).")
+    return {
+        "schema_version": checkpoint.get("schema_version"),
+        "epoch": int(checkpoint.get("epoch", 0)),
+        "class_count": class_count,
+        "best_val_accuracy": float(checkpoint.get("best_val_accuracy", 0.0)),
+        "initialization": checkpoint.get("initialization", ""),
+    }
+
+
+def load_training_checkpoint(
+    path: Path,
+    model: nn.Module,
+    optimizer: optim.Optimizer,
+    scheduler: lr_scheduler.LRScheduler,
+    expected_classes: int,
+    device: torch.device,
+) -> dict[str, Any]:
+    checkpoint = read_training_checkpoint(path)
+    class_count = int(checkpoint.get("class_count", 0))
+    if class_count != expected_classes:
+        raise ValueError(f"Checkpoint class count ({class_count}) does not match dataset classes ({expected_classes}).")
+    model.load_state_dict(checkpoint["model_state_dict"])
+    if checkpoint.get("optimizer_state_dict"):
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        optimizer_state_to_device(optimizer, device)
+    if checkpoint.get("scheduler_state_dict"):
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+    return {
+        "completed_epochs": int(checkpoint.get("epoch", 0)),
+        "best_val_accuracy": float(checkpoint.get("best_val_accuracy", 0.0)),
+        "best_model_state_dict": checkpoint.get("best_model_state_dict") or copy.deepcopy(model.state_dict()),
+        "epoch_metrics": list(checkpoint.get("epoch_metrics", [])),
+    }
+
+
+def save_training_checkpoint(
+    path: Path,
+    model: nn.Module,
+    optimizer: optim.Optimizer,
+    scheduler: lr_scheduler.LRScheduler,
+    *,
+    epoch: int,
+    best_val_accuracy: float,
+    best_model_state_dict: dict[str, Any],
+    class_names: Sequence[str],
+    initialization: str,
+    epoch_metrics: Sequence[dict[str, Any]],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "schema_version": 1,
+            "epoch": epoch,
+            "class_count": len(class_names),
+            "classes": list(class_names),
+            "initialization": initialization,
+            "best_val_accuracy": best_val_accuracy,
+            "model_state_dict": state_dict_to_cpu(model.state_dict()),
+            "best_model_state_dict": state_dict_to_cpu(best_model_state_dict),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "epoch_metrics": list(epoch_metrics),
+        },
+        path,
+    )
 
 
 def training_transform(augment: bool = True) -> transforms.Compose:
@@ -313,6 +403,8 @@ def train_classifier(
     seed: int,
     max_samples_per_class: int | None = None,
     initial_model_path: Path | None = None,
+    checkpoint_output_path: Path | None = None,
+    resume_checkpoint_path: Path | None = None,
 ) -> dict[str, Any]:
     torch.manual_seed(seed)
     loaders, sizes, class_names, splits = build_dataloaders(
@@ -328,7 +420,10 @@ def train_classifier(
         raise RuntimeError("No training images found.")
 
     device = choose_training_device(device_name)
-    if initial_model_path:
+    if resume_checkpoint_path:
+        model = build_resnet18_classifier(len(class_names), pretrained=False).to(device)
+        initialization = "resume_checkpoint"
+    elif initial_model_path:
         model = load_initial_classifier(initial_model_path, len(class_names)).to(device)
         initialization = "initial_model"
     else:
@@ -340,9 +435,23 @@ def train_classifier(
     best_state = copy.deepcopy(model.state_dict())
     best_val_acc = 0.0
     epoch_metrics: list[dict[str, Any]] = []
+    start_epoch = 0
+    if resume_checkpoint_path:
+        resume = load_training_checkpoint(
+            resume_checkpoint_path,
+            model,
+            optimizer,
+            scheduler,
+            len(class_names),
+            device,
+        )
+        start_epoch = int(resume["completed_epochs"])
+        best_val_acc = float(resume["best_val_accuracy"])
+        best_state = resume["best_model_state_dict"]
+        epoch_metrics = list(resume["epoch_metrics"])
     started = time.time()
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         train_metrics = run_phase(model, loaders["train"], criterion, optimizer, device)
         val_metrics = run_phase(model, loaders["val"], criterion, None, device) if "val" in loaders else {}
         scheduler.step()
@@ -351,6 +460,19 @@ def train_classifier(
             best_val_acc = val_acc
             best_state = copy.deepcopy(model.state_dict())
         epoch_metrics.append({"epoch": epoch + 1, "train": train_metrics, "val": val_metrics})
+        if checkpoint_output_path:
+            save_training_checkpoint(
+                checkpoint_output_path,
+                model,
+                optimizer,
+                scheduler,
+                epoch=epoch + 1,
+                best_val_accuracy=best_val_acc,
+                best_model_state_dict=best_state,
+                class_names=class_names,
+                initialization=initialization,
+                epoch_metrics=epoch_metrics,
+            )
         print(
             f"epoch {epoch + 1}/{epochs} "
             f"train_loss={train_metrics['loss']:.4f} train_acc={train_metrics['accuracy']:.4f} "
@@ -369,10 +491,14 @@ def train_classifier(
         "labels": str(labels_path),
         "initialization": initialization,
         "initial_model": str(initial_model_path) if initial_model_path else "",
+        "resume_checkpoint": str(resume_checkpoint_path) if resume_checkpoint_path else "",
+        "checkpoint_output": str(checkpoint_output_path) if checkpoint_output_path else "",
         "classes": class_names,
         "class_count": len(class_names),
         "sizes": sizes,
         "splits": {phase: len(indices) for phase, indices in splits.items()},
+        "start_epoch": start_epoch,
+        "target_epochs": epochs,
         "epochs": epoch_metrics,
         "best_val_accuracy": best_val_acc,
         "test": test_metrics,
