@@ -183,3 +183,23 @@ python scripts/attribute_death_events.py \
 - `attribution_confidence`: 规则置信度，不等同于模型概率。
 - `attribution_evidence`: 为什么这么判断。
 - `killer_candidates`: 多候选时保留给人工或 LLM 继续判断。
+
+## Goal 5: Web 工作台接入
+
+Goal 5 将 `death_event_ocr` 接入现有主动学习工作台：
+
+- 工作台会读取 manifest 中的 `death_events.ocr_candidates_csv`。
+- 如果没有 manifest 配置，但默认文件存在，也会读取 `outputs/death_events/ocr_candidates/death_ocr_candidates.csv`。
+- `death_event_ocr` 会显示为“死亡事件 OCR”。
+- 标注类型复用 OCR 文本复核入口，可以在图片 crop 上填写/修正 `text` 和 `notes`。
+- 顶部报告区会显示 Death OCR Candidates 和 Death Attribution 的状态。
+
+最小 manifest 示例：
+
+```json
+{
+  "death_events": {
+    "ocr_candidates_csv": "outputs/death_events/ocr_candidates/death_ocr_candidates.csv"
+  }
+}
+```

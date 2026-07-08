@@ -379,7 +379,8 @@ const I18N = {
     "target.count_ocr_yolo": "数字 OCR YOLO",
     "target.message_ocr_yolo": "消息 OCR YOLO",
     "target.weapon_classifier_resnet18": "武器分类器",
-    "target.heatmap_tracker_labels": "热力图轨迹标注"
+    "target.heatmap_tracker_labels": "热力图轨迹标注",
+    "target.death_event_ocr": "死亡事件 OCR"
   },
   en: {
     "app.title": "Active Learning Workbench",
@@ -461,7 +462,8 @@ const I18N = {
     "target.count_ocr_yolo": "count OCR YOLO",
     "target.message_ocr_yolo": "message OCR YOLO",
     "target.weapon_classifier_resnet18": "weapon classifier",
-    "target.heatmap_tracker_labels": "heatmap tracker labels"
+    "target.heatmap_tracker_labels": "heatmap tracker labels",
+    "target.death_event_ocr": "death event OCR"
   }
 };
 let language = localStorage.getItem("workbenchLanguage") || "zh-CN";

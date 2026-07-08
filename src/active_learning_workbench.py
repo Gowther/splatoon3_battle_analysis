@@ -22,6 +22,7 @@ DEFAULT_ACTION_RUNS_PATH = DEFAULT_STATE_DIR / "action_runs.json"
 DEFAULT_AUTOMATION_RUNS_PATH = DEFAULT_STATE_DIR / "automation_runs.json"
 DEFAULT_JOBS_PATH = DEFAULT_STATE_DIR / "jobs.json"
 DEFAULT_CANDIDATE_MANIFEST = ROOT / "outputs" / "training_sample_candidates" / "manifest.json"
+DEFAULT_DEATH_OCR_CANDIDATES = ROOT / "outputs" / "death_events" / "ocr_candidates" / "death_ocr_candidates.csv"
 DEFAULT_MODEL_TRAINING_TARGETS = ROOT / "config" / "model_training_targets.json"
 DEFAULT_MODEL_REGISTRY = ROOT / "config" / "models.json"
 
@@ -64,6 +65,18 @@ REPORT_SPECS: tuple[dict[str, Any], ...] = (
         "title": "Heatmap Comparison",
         "title_zh": "热力图对比",
         "paths": ["outputs/validation_suite/heatmap_comparison.json", "outputs/heatmap_comparison.json"],
+    },
+    {
+        "id": "death_ocr_candidates",
+        "title": "Death OCR Candidates",
+        "title_zh": "死亡 OCR 候选",
+        "paths": ["outputs/death_events/ocr_candidates/death_ocr_candidates.json"],
+    },
+    {
+        "id": "death_attribution",
+        "title": "Death Attribution",
+        "title_zh": "死亡归因",
+        "paths": ["outputs/death_events/death_attribution_report.json"],
     },
     {
         "id": "training_datasets",
@@ -318,6 +331,9 @@ def payload_counts(payload: Any) -> dict[str, Any]:
         counts.update({f"summary_{key}": value for key, value in payload["summary"].items() if isinstance(value, (int, float, str))})
     if isinstance(payload.get("target_rows"), dict):
         counts["target_rows"] = payload["target_rows"]
+    for key in ("event_count", "candidate_count", "attributed_count", "failure_count"):
+        if key in payload:
+            counts[key] = payload[key]
     if isinstance(payload.get("progress"), dict):
         progress = payload["progress"]
         counts["labeled_rows"] = progress.get("labeled_rows", 0)
@@ -426,7 +442,7 @@ def candidate_annotation_type(target: str) -> str:
         return "heatmap_point"
     if target == "weapon_classifier_resnet18":
         return "classification"
-    if target in {"count_ocr_yolo", "message_ocr_yolo"}:
+    if target in {"count_ocr_yolo", "message_ocr_yolo", "death_event_ocr"}:
         return "ocr_box_text"
     return "yolo_box"
 
@@ -531,6 +547,10 @@ def candidate_group_key(candidate: dict[str, Any]) -> str:
     if target == "heatmap_tracker_labels":
         slot = text_value(raw, "track_slot", "player_id", "team")
         return "|".join([target, match_id, reason, time_bucket, slot])
+    if target == "death_event_ocr":
+        region = text_value(raw, "region", "reason")
+        event_id = text_value(raw, "event_id", "source_id")
+        return "|".join([target, match_id, event_id, region, time_bucket])
     return "|".join([target, match_id, source_id, reason, time_bucket])
 
 
@@ -632,6 +652,19 @@ def load_candidate_queue(
             f"{target}:{row.get('match_id', 'unknown')}:"
             f"{row.get('time', row.get('elapsed_time', '0'))}:{row.get('track_slot', index)}:{index:04d}"
         )
+        candidate["status"] = str(staging.get(candidate["id"], {}).get("status", "todo"))
+        candidate["staging"] = staging.get(candidate["id"], {})
+        candidate["llm_review"] = reviews.get(candidate["id"], {})
+        candidates.append(candidate)
+
+    death_csv = ""
+    if isinstance(manifest, dict):
+        death_csv = str((manifest.get("death_events", {}) or {}).get("ocr_candidates_csv", ""))
+    if not death_csv and DEFAULT_DEATH_OCR_CANDIDATES.exists():
+        death_csv = str(DEFAULT_DEATH_OCR_CANDIDATES)
+    for index, row in enumerate(read_csv_rows(death_csv), start=1):
+        target = row.get("target") or "death_event_ocr"
+        candidate = normalize_candidate(row, target=target, row_index=index)
         candidate["status"] = str(staging.get(candidate["id"], {}).get("status", "todo"))
         candidate["staging"] = staging.get(candidate["id"], {})
         candidate["llm_review"] = reviews.get(candidate["id"], {})

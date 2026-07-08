@@ -70,6 +70,25 @@ class ActiveLearningWorkbenchTests(unittest.TestCase):
         self.assertEqual(by_id["ui:1"]["llm_review"]["suggestion"], "player")
         self.assertTrue(any(item["target"] == "heatmap_tracker_labels" for item in queue))
 
+    def test_candidate_queue_includes_death_ocr_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            death_csv = tmp / "death_ocr_candidates.csv"
+            death_csv.write_text(
+                "candidate_id,target,reason,source_id,match_id,video,elapsed_time,row_index,frame_path,ocr_text,details,event_id,region\n"
+                "death:1,death_event_ocr,review_death_message,e1,m1,video.mp4,2.0,1,crop.jpg,Blaster,detail,e1,death_message_center\n",
+                encoding="utf-8",
+            )
+            manifest = tmp / "manifest.json"
+            write_json(manifest, {"death_events": {"ocr_candidates_csv": str(death_csv)}})
+
+            queue = load_candidate_queue(manifest, tmp / "staging.json", tmp / "reviews.json")
+
+        self.assertEqual(len(queue), 1)
+        self.assertEqual(queue[0]["target"], "death_event_ocr")
+        self.assertEqual(queue[0]["annotation_type"], "ocr_box_text")
+        self.assertEqual(queue[0]["preannotation"]["annotation"]["text"], "Blaster")
+
     def test_upsert_annotation_and_apply_dry_run(self):
         with tempfile.TemporaryDirectory() as tmp_name:
             tmp = Path(tmp_name)
@@ -289,6 +308,7 @@ class ActiveLearningWorkbenchTests(unittest.TestCase):
         self.assertIn('<html lang="zh-CN">', APP_HTML)
         self.assertIn("主动学习工作台", APP_HTML)
         self.assertIn('id="languageSelect"', APP_HTML)
+        self.assertIn("死亡事件 OCR", APP_HTML)
 
 
 if __name__ == "__main__":
