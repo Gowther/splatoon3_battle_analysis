@@ -17,6 +17,13 @@ def load_model_registry(path: Path = DEFAULT_MODEL_REGISTRY) -> dict[str, Any]:
         return json.load(f)
 
 
+def save_model_registry(registry: dict[str, Any], path: Path = DEFAULT_MODEL_REGISTRY) -> Path:
+    target = project_path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(registry, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return target
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as f:
