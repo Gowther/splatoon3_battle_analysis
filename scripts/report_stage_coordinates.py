@@ -10,7 +10,8 @@ if str(ROOT) not in sys.path:
 
 from src.data_registry import resolve_project_path
 from src.heatmap.config_loader import load_config, resolve_path
-from src.heatmap.stage_coordinates import build_stage_coordinate_report, render_markdown, write_json
+from src.heatmap.stage_coordinates import build_stage_coordinate_report, load_control_point_asset, render_markdown
+from src.report_io import write_json_report, write_text_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -18,6 +19,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default="src/heatmap/config_match9.yaml", help="Heatmap config YAML.")
     parser.add_argument("--points-csv", type=Path, help="CSV with x/y columns. Defaults to player_tracks or team_points.")
     parser.add_argument("--normalized-output", type=Path, help="Optional CSV output with stage_x/stage_y columns.")
+    parser.add_argument("--control-points", type=Path, help="Optional JSON control-point asset for homography.")
+    parser.add_argument("--schema-output", type=Path, help="Optional JSON output schema for normalized stage columns.")
     parser.add_argument("--output", type=Path, default=ROOT / "outputs" / "stage_coordinates.md")
     parser.add_argument("--json-output", type=Path, default=ROOT / "outputs" / "stage_coordinates.json")
     return parser.parse_args()
@@ -34,11 +37,18 @@ def default_points_csv(config: dict) -> Path | None:
 def main() -> int:
     args = parse_args()
     config = load_config(resolve_path(args.config))
+    control_point_asset = load_control_point_asset(args.control_points) if args.control_points else None
     points_csv = args.points_csv or default_points_csv(config)
-    report = build_stage_coordinate_report(config, points_csv=points_csv, normalized_csv=args.normalized_output)
-    args.output.expanduser().parent.mkdir(parents=True, exist_ok=True)
-    args.output.expanduser().write_text(render_markdown(report), encoding="utf-8")
-    write_json(args.json_output.expanduser(), report)
+    report = build_stage_coordinate_report(
+        config,
+        points_csv=points_csv,
+        normalized_csv=args.normalized_output,
+        control_point_asset=control_point_asset,
+    )
+    write_text_report(args.output.expanduser(), render_markdown(report))
+    write_json_report(args.json_output.expanduser(), report)
+    if args.schema_output:
+        write_json_report(args.schema_output.expanduser(), report["output_schema"])
     print(f"stage coordinate status: {report['status']}")
     return 0
 

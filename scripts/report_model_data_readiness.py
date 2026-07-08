@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.model_data_readiness import build_model_data_readiness_report, load_optional_json, render_markdown, write_json
+from src.model_data_readiness import build_model_data_readiness_report, load_optional_json, render_markdown
+from src.report_io import write_json_report, write_text_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-governance", type=Path, default=ROOT / "outputs" / "dataset_governance.json")
     parser.add_argument("--model-registry", type=Path, default=ROOT / "outputs" / "model_registry.json")
     parser.add_argument("--model-training-plan", type=Path, default=ROOT / "outputs" / "model_training_plan.json")
+    parser.add_argument("--model-training-datasets", type=Path, default=ROOT / "outputs" / "model_training_datasets.json")
     parser.add_argument("--model-experiment-plan", type=Path, default=ROOT / "outputs" / "model_experiment_plan.json")
     parser.add_argument("--output", type=Path, default=ROOT / "outputs" / "model_data_readiness.md")
     parser.add_argument("--json-output", type=Path, default=ROOT / "outputs" / "model_data_readiness.json")
@@ -36,11 +38,11 @@ def main() -> int:
         dataset_governance=load_optional_json(args.dataset_governance),
         model_registry=load_optional_json(args.model_registry),
         model_training_plan=load_optional_json(args.model_training_plan),
+        model_training_datasets=load_optional_json(args.model_training_datasets),
         model_experiment_plan=load_optional_json(args.model_experiment_plan),
     )
-    args.output.expanduser().parent.mkdir(parents=True, exist_ok=True)
-    args.output.expanduser().write_text(render_markdown(report), encoding="utf-8")
-    write_json(args.json_output.expanduser(), report)
+    write_text_report(args.output.expanduser(), render_markdown(report))
+    write_json_report(args.json_output.expanduser(), report)
     print(f"model/data readiness status: {report['status']}")
     return 0
 

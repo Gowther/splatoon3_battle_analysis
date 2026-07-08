@@ -10,7 +10,8 @@ if str(ROOT) not in sys.path:
 
 from src.data_registry import DEFAULT_REGISTRY
 from src.heatmap.annotation_ui import build_annotation_ui
-from src.heatmap.annotation_round import build_annotation_round_report, render_markdown, write_json
+from src.heatmap.annotation_round import build_annotation_round_report, render_markdown
+from src.report_io import write_json_report, write_text_report
 
 
 DEFAULT_CONFIG = ROOT / "config" / "annotation_samples.json"
@@ -38,12 +39,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    print(f"wrote: {path}")
-
-
 def main() -> int:
     args = parse_args()
     report = build_annotation_round_report(
@@ -69,8 +64,8 @@ def main() -> int:
             title=f"Heatmap Annotation Round: {args.round_id}",
             priority_limit=args.priority_limit,
         )
-    write_text(args.output.expanduser(), render_markdown(report))
-    write_json(args.json_output.expanduser(), report)
+    write_text_report(args.output.expanduser(), render_markdown(report))
+    write_json_report(args.json_output.expanduser(), report)
     print(f"heatmap annotation round status: {report['status']}")
     failed_checks = any(not check["ok"] for check in report.get("progress_checks", {}).values())
     if args.strict and (report["status"] == "needs_labels" or failed_checks):

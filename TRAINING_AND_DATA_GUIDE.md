@@ -326,12 +326,7 @@ python scripts/report_model_data_readiness.py \
 
 ## YOLO/OCR 如果要重新训练
 
-现在不建议直接把 YOLO/OCR 训练当作主线，因为项目还没有封装：
-
-- UI detector 的标签数据规范。
-- OCR crop/label 数据集规范。
-- 训练命令包装。
-- 和 `models/the_model.pt`、`models/ocr_model.pt`、`models/message_ocr_model.pt` 的候选模型晋升流程。
+现在不建议直接把 YOLO/OCR 训练当作主线。项目已经有数据目录 dry-run 和候选命令规划，但还没有封装真正的项目级训练 CLI 或候选模型晋升命令。
 
 如果确实要探索 YOLO 训练，建议作为独立实验处理：
 
@@ -343,14 +338,44 @@ python scripts/plan_model_training.py \
   --json-output outputs/model_training_plan.json
 ```
 
-然后按报告补齐数据目录。UI detector 的历史 YOLO 数据可以放在 `.gitignore` 已忽略的 `yolov5/train/`、`yolov5/valid/`、`yolov5/test/`；新的 count/message OCR 数据建议先放在 `outputs/model_training/*_dataset/`。
+再跑数据集 dry-run：
+
+```bash
+python scripts/validate_model_training_datasets.py \
+  --output outputs/model_training_datasets.md \
+  --json-output outputs/model_training_datasets.json
+```
+
+然后按报告补齐数据目录。UI detector 的历史 YOLO 数据放在 `.gitignore` 已忽略的 `yolov5/train/`、`yolov5/valid/`、`yolov5/test/`；新的 count/message OCR 数据放在 `outputs/model_training/count_ocr_dataset/` 和 `outputs/model_training/message_ocr_dataset/`。
+
+YOLO/OCR 目录规范现在记录在 `config/model_training_targets.json` 的 `dataset_spec` 里。每个目标都应包含：
+
+- `data_yaml`：YOLO data.yaml。
+- `splits.train.images` 和 `splits.train.labels`。
+- `splits.val.images` 和 `splits.val.labels`。
+- `class_names`：候选数据集的类别顺序。
 
 规则：
 
 1. 不要直接覆盖 `models/the_model.pt`、`models/ocr_model.pt` 或 `models/message_ocr_model.pt`。
 2. 先跑 `report_model_benchmark_baseline.py`、`report_model_errors.py`、`run_validation_suite.py` 保存现状。
 3. 训练命令和结果写入 `write_experiment_manifest.py`。
-4. 只有当 `plan_model_training.py` 从 `needs_data` 变为 `ready`，才进入实际训练。
+4. 只有当 `plan_model_training.py` 和 `validate_model_training_datasets.py` 对目标从 `needs_data` 变为 `ready`，才进入实际训练。
+
+换模型或补数据前，推荐先生成一份固定 baseline 包：
+
+```bash
+python scripts/run_model_experiment_baseline.py \
+  --output-dir outputs/model_experiment_baseline
+```
+
+如果要同时重新跑完整验证套件：
+
+```bash
+python scripts/run_model_experiment_baseline.py \
+  --output-dir outputs/model_experiment_baseline \
+  --run-validation-suite
+```
 
 当前 `yolov5/` 更像 vendor/runtime 边界，不适合继续塞项目业务逻辑。等 YOLO/OCR 训练变成明确目标后，应该新增 `scripts/train_ui_detector.py` 或类似包装，而不是让用户直接记 upstream YOLO 命令。
 

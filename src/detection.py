@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from src.core.paths import ROOT
+from src.yolov5_vendor import ensure_vendor_ready
 
 
 def choose_device(requested: str) -> str:
@@ -23,8 +24,9 @@ def choose_device(requested: str) -> str:
 
 
 def load_yolo_model(path: Path, device: str, conf: float, iou: float):
+    yolov5_root = ensure_vendor_ready(ROOT / "yolov5")
     model = torch.hub.load(
-        str(ROOT / "yolov5"),
+        str(yolov5_root),
         "custom",
         path=str(path),
         source="local",

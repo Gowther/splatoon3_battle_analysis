@@ -3,14 +3,18 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Iterable, Sequence
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from src.project_check_registry import experiment_delivery_steps, heatmap_annotation_steps, model_error_steps, tooling_smoke_steps
 
 
-ROOT = Path(__file__).resolve().parents[1]
 PYTHON = ROOT / ".venv" / "bin" / "python"
 
 ACTIVE_COMPILE_TARGETS = ("src", "scripts", "tests", "yolov5")

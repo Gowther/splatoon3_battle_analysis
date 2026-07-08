@@ -21,6 +21,8 @@ class ProjectCheckRegistryTests(unittest.TestCase):
         self.assertIn("heatmap quality loop helper", names)
         self.assertIn("model registry report helper", names)
         self.assertIn("model training plan helper", names)
+        self.assertIn("model training dataset dry run helper", names)
+        self.assertIn("yolov5 vendor boundary helper", names)
         self.assertTrue(any("footages/match_1.mp4" in [str(part) for part in step.command] for step in steps))
 
     def test_model_error_steps_use_sample_csv(self) -> None:

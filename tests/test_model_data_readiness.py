@@ -15,6 +15,7 @@ class ModelDataReadinessTests(unittest.TestCase):
             dataset_governance={"status": "passed"},
             model_registry={"status": "passed"},
             model_training_plan={"status": "needs_data"},
+            model_training_datasets={"status": "needs_data"},
             model_experiment_plan={"status": "planned", "summary": {"high_priority": 1}},
         )
 
@@ -30,6 +31,7 @@ class ModelDataReadinessTests(unittest.TestCase):
             dataset_governance={"status": "passed"},
             model_registry={"status": "passed"},
             model_training_plan={"status": "ready"},
+            model_training_datasets={"status": "ready"},
             model_experiment_plan={"status": "planned", "summary": {}},
         )
 
@@ -44,6 +46,7 @@ class ModelDataReadinessTests(unittest.TestCase):
             runtime_benchmarks={"status": "ready"},
             dataset_governance={"status": "passed"},
             model_training_plan={"status": "ready"},
+            model_training_datasets={"status": "ready"},
         )
 
         self.assertEqual(report["status"], "needs_data")

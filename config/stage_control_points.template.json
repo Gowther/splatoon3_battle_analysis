@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "template": true,
+  "stage_id": "replace_with_stage_id",
+  "coordinate_space": "video_pixels",
+  "target_coordinate_space": "stage_normalized_0_1",
+  "control_points": [
+    {
+      "source": [0, 0],
+      "target": [0.0, 0.0]
+    },
+    {
+      "source": [100, 0],
+      "target": [1.0, 0.0]
+    },
+    {
+      "source": [100, 100],
+      "target": [1.0, 1.0]
+    },
+    {
+      "source": [0, 100],
+      "target": [0.0, 1.0]
+    }
+  ],
+  "notes": [
+    "Template only. Replace source points with visible stage-map landmarks for a specific match or stage.",
+    "Targets are normalized stage-map coordinates in the 0..1 range."
+  ]
+}

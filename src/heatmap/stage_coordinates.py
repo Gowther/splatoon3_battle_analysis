@@ -11,6 +11,13 @@ import numpy as np
 from src.data_registry import display_path, resolve_project_path
 
 
+STAGE_OUTPUT_COLUMNS = (
+    "stage_x",
+    "stage_y",
+    "stage_inside_roi",
+)
+
+
 @dataclass(frozen=True)
 class StageBox:
     x1: float
@@ -114,6 +121,79 @@ def control_points_from_config(config: Mapping[str, Any]) -> list[dict[str, floa
     return points
 
 
+def load_control_point_asset(path: Path | str) -> dict[str, Any]:
+    target = resolve_project_path(path) or Path(path).expanduser()
+    with target.open(encoding="utf-8") as f:
+        payload = json.load(f)
+    points = payload.get("control_points", [])
+    if not isinstance(points, list):
+        raise ValueError("control_points must be a list")
+    return {
+        "path": display_path(target),
+        "stage_id": payload.get("stage_id", ""),
+        "coordinate_space": payload.get("coordinate_space", ""),
+        "target_coordinate_space": payload.get("target_coordinate_space", "stage_normalized_0_1"),
+        "template": bool(payload.get("template", False)),
+        "control_points": [parse_control_point(point) for point in points if isinstance(point, Mapping)],
+        "notes": payload.get("notes", []),
+    }
+
+
+def merge_control_point_asset(config: Mapping[str, Any], asset: Mapping[str, Any]) -> dict[str, Any]:
+    output = dict(config)
+    stage_coordinates = dict(output.get("stage_coordinates", {})) if isinstance(output.get("stage_coordinates"), Mapping) else {}
+    stage_coordinates["control_points"] = list(asset.get("control_points", []))
+    stage_coordinates["control_point_asset"] = asset.get("path", "")
+    if asset.get("stage_id"):
+        stage_coordinates["stage_id"] = asset.get("stage_id")
+    output["stage_coordinates"] = stage_coordinates
+    return output
+
+
+def control_point_summary(control_points: list[dict[str, float]], source_box: StageBox | None = None) -> dict[str, Any]:
+    target_out_of_bounds: list[int] = []
+    source_out_of_roi: list[int] = []
+    duplicate_sources: list[str] = []
+    seen_sources: set[tuple[float, float]] = set()
+    for index, point in enumerate(control_points):
+        stage_x = point["stage_x"]
+        stage_y = point["stage_y"]
+        if not (0.0 <= stage_x <= 1.0 and 0.0 <= stage_y <= 1.0):
+            target_out_of_bounds.append(index)
+        source = (point["source_x"], point["source_y"])
+        if source in seen_sources:
+            duplicate_sources.append(f"{point['source_x']},{point['source_y']}")
+        seen_sources.add(source)
+        if source_box is not None:
+            normalized = normalize_point(point["source_x"], point["source_y"], source_box)
+            if not normalized["inside_roi"]:
+                source_out_of_roi.append(index)
+    count = len(control_points)
+    ready = count >= 4 and not target_out_of_bounds and not duplicate_sources
+    return {
+        "status": "ready" if ready else "needs_control_points",
+        "count": count,
+        "required_min": 4,
+        "missing_count": max(0, 4 - count),
+        "target_out_of_bounds_indices": target_out_of_bounds,
+        "source_out_of_roi_indices": source_out_of_roi,
+        "duplicate_sources": duplicate_sources,
+    }
+
+
+def coordinate_schema(method: str) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "coordinate_space": "stage_normalized_0_1",
+        "method": method,
+        "columns": [
+            {"name": "stage_x", "type": "float", "range": [0.0, 1.0], "description": "normalized stage-map x coordinate"},
+            {"name": "stage_y", "type": "float", "range": [0.0, 1.0], "description": "normalized stage-map y coordinate"},
+            {"name": "stage_inside_roi", "type": "boolean", "description": "false when the source point maps outside the configured stage area"},
+        ],
+    }
+
+
 def homography_from_control_points(control_points: list[dict[str, float]]) -> list[list[float]]:
     if len(control_points) < 4:
         raise ValueError("at least four stage control points are required")
@@ -206,7 +286,7 @@ def write_normalized_csv(
     rows, fieldnames = read_csv_rows(input_csv)
     normalized_rows, summary = normalize_rows(rows, source_box, homography_matrix=homography_matrix)
     output_fields = list(fieldnames)
-    for field in ("stage_x", "stage_y", "stage_inside_roi"):
+    for field in STAGE_OUTPUT_COLUMNS:
         if field not in output_fields:
             output_fields.append(field)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -233,7 +313,10 @@ def build_stage_coordinate_report(
     *,
     points_csv: Path | str | None = None,
     normalized_csv: Path | str | None = None,
+    control_point_asset: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if control_point_asset is not None:
+        config = merge_control_point_asset(config, control_point_asset)
     try:
         source_box = stage_box_from_config(config)
         transform_errors: list[str] = []
@@ -243,9 +326,11 @@ def build_stage_coordinate_report(
 
     map_view = config.get("map_view", {}) if isinstance(config, Mapping) else {}
     control_points = control_points_from_config(config)
+    asset_is_template = bool(control_point_asset and control_point_asset.get("template"))
+    control_summary = control_point_summary(control_points, source_box)
     homography_matrix: list[list[float]] | None = None
-    homography_status = "needs_control_points"
-    if len(control_points) >= 4:
+    homography_status = "template_only" if asset_is_template else "needs_control_points"
+    if len(control_points) >= 4 and not asset_is_template:
         try:
             homography_matrix = homography_from_control_points(control_points)
             homography_status = "ready"
@@ -263,9 +348,12 @@ def build_stage_coordinate_report(
             "source_roi": source_box.as_dict() if source_box else {},
             "homography_status": homography_status,
             "control_point_count": len(control_points),
+            "control_points": control_summary,
+            "control_point_asset": dict(control_point_asset or {}),
             "matrix": homography_matrix or [],
             "notes": "Uses stage-map homography when four or more control points are available; otherwise maps current video-pixel map ROI to 0..1 coordinates.",
         },
+        "output_schema": coordinate_schema(method),
         "points": {"status": "not_requested"},
         "errors": transform_errors,
     }
@@ -295,6 +383,8 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 def render_markdown(report: Mapping[str, Any]) -> str:
     transform = report.get("transform", {})
     source_roi = transform.get("source_roi", {}) if isinstance(transform, Mapping) else {}
+    control_points = transform.get("control_points", {}) if isinstance(transform, Mapping) else {}
+    output_schema = report.get("output_schema", {}) if isinstance(report.get("output_schema", {}), Mapping) else {}
     points = report.get("points", {})
     summary = points.get("summary", {}) if isinstance(points, Mapping) else {}
     lines = [
@@ -306,7 +396,9 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"- method: `{transform.get('method', '') if isinstance(transform, Mapping) else ''}`",
         f"- homography_status: `{transform.get('homography_status', '') if isinstance(transform, Mapping) else ''}`",
         f"- control_point_count: {transform.get('control_point_count', 0) if isinstance(transform, Mapping) else 0}",
+        f"- control_point_status: `{control_points.get('status', '') if isinstance(control_points, Mapping) else ''}`",
         f"- source_roi: `{json.dumps(source_roi, ensure_ascii=False)}`",
+        f"- output_columns: {', '.join(column.get('name', '') for column in output_schema.get('columns', []))}",
         "",
         "## Point Summary",
         "",

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -10,8 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.core.paths import configure_environment, project_path
+from src.core.paths import configure_environment
 from src.project_hygiene import build_hygiene_report, render_markdown
+from src.report_io import emit_markdown_or_stdout, strict_exit_code, write_json_report
 
 
 configure_environment()
@@ -26,28 +26,18 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def write_text(path: Path, content: str) -> None:
-    target = project_path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
-    print(f"wrote: {target}")
-
-
 def main() -> int:
     args = parse_args()
     report = build_hygiene_report(args.root)
     markdown = render_markdown(report)
 
-    if args.output:
-        write_text(args.output, markdown)
-    else:
-        print(markdown, end="")
+    emit_markdown_or_stdout(args.output, markdown)
 
     if args.json_output:
-        write_text(args.json_output, json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+        write_json_report(args.json_output, report)
 
     print(f"project hygiene status: {report['status']}")
-    return 1 if args.strict and report["status"] != "passed" else 0
+    return strict_exit_code(report["status"], args.strict, passing_statuses={"passed"})
 
 
 if __name__ == "__main__":

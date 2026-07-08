@@ -30,6 +30,7 @@ def build_model_data_readiness_report(
     dataset_governance: dict[str, Any] | None = None,
     model_registry: dict[str, Any] | None = None,
     model_training_plan: dict[str, Any] | None = None,
+    model_training_datasets: dict[str, Any] | None = None,
     model_experiment_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     blockers: list[dict[str, str]] = []
@@ -55,6 +56,13 @@ def build_model_data_readiness_report(
         blockers.append({"area": "model_registry", "detail": f"Model registry status is {report_status(model_registry)}."})
     if report_status(model_training_plan) not in {"ready"}:
         warnings.append({"area": "model_training_plan", "detail": f"Model training plan status is {report_status(model_training_plan)}."})
+    if report_status(model_training_datasets) not in {"ready"}:
+        warnings.append(
+            {
+                "area": "model_training_datasets",
+                "detail": f"Model training dataset dry-run status is {report_status(model_training_datasets)}.",
+            }
+        )
 
     experiment_summary = (model_experiment_plan or {}).get("summary", {})
     actions = [
@@ -75,6 +83,7 @@ def build_model_data_readiness_report(
             "dataset_governance": report_status(dataset_governance),
             "model_registry": report_status(model_registry),
             "model_training_plan": report_status(model_training_plan),
+            "model_training_datasets": report_status(model_training_datasets),
             "model_experiment_plan": report_status(model_experiment_plan),
         },
         "heatmap_labels": {

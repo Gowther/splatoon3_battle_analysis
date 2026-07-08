@@ -9,6 +9,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | Path | Status | Notes |
 | --- | --- | --- |
 | `src/run_analysis.py` | Supported | Main offline image/video YOLO/OCR/weapon pipeline. |
+| `src/analysis_pipeline.py` | Supported | Model loading, frame analysis loop, row assembly, and weapon warmup for the offline pipeline. |
 | `src/detection.py` | Supported | YOLOv5 loading and UI element detection helpers. |
 | `src/ocr.py` | Supported | Count OCR and message OCR helpers. |
 | `src/weapons.py` | Supported | Weapon crop/classification helpers. |
@@ -29,24 +30,27 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/model_error_report.py` | Supported | CSV-level model/OCR risk signal reporting. |
 | `src/model_experiments.py` | Supported | Model replacement experiment planning and prioritization. |
 | `src/model_registry.py` | Supported | Canonical runtime model registry validation and reporting. |
-| `src/model_training_plan.py` | Supported | Detector/OCR training target data readiness planning. |
+| `src/model_training_plan.py` | Supported | Detector/OCR training target data readiness and YOLO dataset dry-run planning. |
 | `src/model_data_readiness.py` | Supported | Readiness gate before running the next data/model experiment phase. |
 | `src/model_benchmark_baseline.py` | Supported | Snapshot current evaluation/error/heatmap reports as a benchmark baseline. |
+| `src/model_experiment_baseline.py` | Supported | Fixed command step planning for model experiment baseline packages. |
+| `src/yolov5_vendor.py` | Supported | YOLOv5 vendor boundary and local runtime readiness checks. |
 | `src/dataset_governance.py` | Supported | Dataset, label, and registry metadata governance reporting. |
 | `src/project_hygiene.py` | Supported | Root-layout, output, cache, and legacy-boundary hygiene reporting. |
 | `src/runtime_report.py` | Supported | Small JSON/Markdown runtime report helpers for timed commands. |
 | `src/runtime_benchmarks.py` | Supported | Runtime report aggregation for benchmark baselines. |
+| `src/report_io.py` | Supported | Shared Markdown/JSON report writing and strict status exit helpers for report CLIs. |
 | `src/project_check_registry.py` | Supported | Composable `check_project.py --tooling` helper step registry. |
 | `src/change_package.py` | Supported | Worktree grouping and verification summary for review/commit planning. |
 | `src/experiment_manifest.py` | Supported | Reproducibility manifests for data/model experiments. |
 | `scripts/` | Supported | Health checks, summaries, evaluation, match intake, quality overview, model error reports, experiment planning, registry validation, heatmap reports, annotation exports, weapon training CLIs, and training planning. |
-| `config/` | Supported | Evaluation, data registry, model registry, annotation sample, and experiment configuration. |
+| `config/` | Supported | Evaluation, data registry, model registry, annotation sample, stage control point templates, and experiment configuration. |
 | `models/` | Runtime assets | Canonical `.pt` and `.pth` weights used by supported commands. |
 | `main_weapon_list.txt` | Runtime asset | Weapon classifier output-index to label mapping; must match the classifier output count. |
 | `main_icons/` | Training asset | Active weapon icon source set used by synthetic dataset generation. |
 | `sample/` | Runtime fixture | Small image fixture used by health checks. |
 | `tests/` | Supported | Fast stdlib unit tests for refactored pure logic. |
-| `yolov5/` | Vendor/runtime dependency | Upstream YOLOv5 code used by the current detector and raw smoke check. |
+| `yolov5/` | Vendor/runtime dependency | Vendored upstream YOLOv5 code used by local `torch.hub.load(..., source="local")`; do not place project-owned scripts here. |
 
 ## Local Data
 
@@ -84,3 +88,8 @@ For new work, prefer adding a supported CLI under `scripts/` or a small module
 under `src/`. Avoid restoring date-stamped root scripts or ad-hoc scripts under
 `yolov5/`; use `legacy/` only for references that should not participate in the
 daily health check.
+
+Run `python scripts/report_yolov5_vendor.py --strict` when touching the detector
+runtime boundary. Local logs or downloaded `.pt` files under `yolov5/` are
+reported as warnings, but project-owned Python scripts in that vendor root are
+treated as blockers.

@@ -162,6 +162,18 @@ def tooling_smoke_steps(python: Path, work_dir: Path, match_video: str, device: 
             ],
         ),
         CheckStep(
+            "yolov5 vendor boundary helper",
+            [
+                python,
+                "scripts/report_yolov5_vendor.py",
+                "--output",
+                work_dir / "yolov5_vendor.md",
+                "--json-output",
+                work_dir / "yolov5_vendor.json",
+                "--strict",
+            ],
+        ),
+        CheckStep(
             "dataset governance report helper",
             [
                 python,
@@ -193,6 +205,17 @@ def tooling_smoke_steps(python: Path, work_dir: Path, match_video: str, device: 
                 work_dir / "model_training_plan.md",
                 "--json-output",
                 work_dir / "model_training_plan.json",
+            ],
+        ),
+        CheckStep(
+            "model training dataset dry run helper",
+            [
+                python,
+                "scripts/validate_model_training_datasets.py",
+                "--output",
+                work_dir / "model_training_datasets.md",
+                "--json-output",
+                work_dir / "model_training_datasets.json",
             ],
         ),
         CheckStep(
@@ -428,6 +451,8 @@ def experiment_delivery_steps(python: Path, root: Path, work_dir: Path) -> list[
                 work_dir / "model_registry.json",
                 "--model-training-plan",
                 work_dir / "model_training_plan.json",
+                "--model-training-datasets",
+                work_dir / "model_training_datasets.json",
                 "--model-experiment-plan",
                 work_dir / "model_experiment_plan.json",
                 "--output",

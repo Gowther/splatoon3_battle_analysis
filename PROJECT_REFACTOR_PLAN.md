@@ -34,12 +34,15 @@ Use these entrypoints for active development:
 | `python scripts/export_heatmap_anomalies.py` | Export low-quality heatmap frames for manual review. |
 | `python scripts/inventory_project.py` | Local model/footage/dataset inventory. |
 | `python scripts/report_dataset_governance.py` | Check weapon dataset, labels, and registry metadata governance. |
+| `python scripts/plan_model_training.py` | Plan detector/OCR training targets and required data assets. |
+| `python scripts/validate_model_training_datasets.py` | Dry-run detector/OCR YOLO dataset layout, class names, and split counts before training. |
 | `python scripts/plan_weapon_training.py` | Weapon dataset and training-plan inspection. |
 | `python scripts/train_weapon_classifier.py` | Supported weapon classifier training CLI. |
 | `python scripts/generate_weapon_dataset.py` | Optional synthetic weapon dataset generation from icon assets. |
 | `python scripts/benchmark_model_experiments.py` | Build a repeatable benchmark matrix for planned model experiments. |
 | `python scripts/report_model_data_readiness.py` | Check whether labels, validation, runtime, and governance are ready for the next data/model phase. |
 | `python scripts/report_model_benchmark_baseline.py` | Snapshot current validation reports into `outputs/model_benchmarks/`. |
+| `python scripts/run_model_experiment_baseline.py` | Generate a fixed model experiment baseline package with registry, dataset dry-run, readiness, and manifest artifacts. |
 | `python scripts/run_with_runtime_report.py` | Time a command and write JSON/Markdown runtime reports. |
 | `python scripts/report_runtime_benchmarks.py` | Aggregate runtime reports into a benchmark summary. |
 | `python scripts/write_experiment_manifest.py` | Write source/artifact hashes and verification into an experiment manifest. |

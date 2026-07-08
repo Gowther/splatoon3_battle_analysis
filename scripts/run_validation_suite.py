@@ -83,6 +83,8 @@ def main() -> int:
     model_registry_json = work_dir / "model_registry.json"
     model_training_plan_md = work_dir / "model_training_plan.md"
     model_training_plan_json = work_dir / "model_training_plan.json"
+    model_training_datasets_md = work_dir / "model_training_datasets.md"
+    model_training_datasets_json = work_dir / "model_training_datasets.json"
     model_error_md = work_dir / "model_error_report_smoothed.md"
     model_error_json = work_dir / "model_error_report_smoothed.json"
     validation_samples_md = work_dir / "validation_samples.md"
@@ -122,6 +124,19 @@ def main() -> int:
                 model_training_plan_md,
                 "--json-output",
                 model_training_plan_json,
+            ],
+        )
+    )
+    steps.append(
+        run_step(
+            "model training dataset dry run",
+            [
+                python,
+                "scripts/validate_model_training_datasets.py",
+                "--output",
+                model_training_datasets_md,
+                "--json-output",
+                model_training_datasets_json,
             ],
         )
     )

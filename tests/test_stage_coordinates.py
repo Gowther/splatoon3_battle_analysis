@@ -8,8 +8,12 @@ from pathlib import Path
 from src.heatmap.stage_coordinates import (
     StageBox,
     build_stage_coordinate_report,
+    control_point_summary,
     control_points_from_config,
+    coordinate_schema,
     homography_from_control_points,
+    load_control_point_asset,
+    merge_control_point_asset,
     normalize_point,
     normalize_point_homography,
     normalize_rows,
@@ -99,6 +103,65 @@ class StageCoordinateTests(unittest.TestCase):
 
         self.assertEqual(report["transform"]["method"], "homography")
         self.assertEqual(report["transform"]["homography_status"], "ready")
+        self.assertEqual(report["output_schema"]["columns"][0]["name"], "stage_x")
+
+    def test_control_point_asset_can_be_merged_into_config(self) -> None:
+        asset = {
+            "path": "config/stage_control_points/test.json",
+            "stage_id": "test_stage",
+            "control_points": [
+                {"source_x": 0.0, "source_y": 0.0, "stage_x": 0.0, "stage_y": 0.0},
+                {"source_x": 10.0, "source_y": 0.0, "stage_x": 1.0, "stage_y": 0.0},
+                {"source_x": 10.0, "source_y": 10.0, "stage_x": 1.0, "stage_y": 1.0},
+                {"source_x": 0.0, "source_y": 10.0, "stage_x": 0.0, "stage_y": 1.0},
+            ],
+        }
+
+        merged = merge_control_point_asset({"map_view": {"roi": {"x1": 0, "y1": 0, "x2": 10, "y2": 10}}}, asset)
+
+        self.assertEqual(merged["stage_coordinates"]["stage_id"], "test_stage")
+        self.assertEqual(len(control_points_from_config(merged)), 4)
+
+    def test_control_point_summary_flags_missing_points(self) -> None:
+        summary = control_point_summary([], StageBox(0, 0, 10, 10))
+
+        self.assertEqual(summary["status"], "needs_control_points")
+        self.assertEqual(summary["missing_count"], 4)
+
+    def test_load_control_point_asset_normalizes_points(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "control_points.json"
+            path.write_text(
+                '{"stage_id":"test","control_points":[{"source":[0,0],"target":[0,0]}]}',
+                encoding="utf-8",
+            )
+
+            asset = load_control_point_asset(path)
+
+        self.assertEqual(asset["stage_id"], "test")
+        self.assertEqual(asset["control_points"][0]["source_x"], 0.0)
+
+    def test_template_control_point_asset_does_not_enable_homography(self) -> None:
+        report = build_stage_coordinate_report(
+            {"map_view": {"roi": {"x1": 0, "y1": 0, "x2": 10, "y2": 10}}},
+            control_point_asset={
+                "template": True,
+                "control_points": [
+                    {"source_x": 0.0, "source_y": 0.0, "stage_x": 0.0, "stage_y": 0.0},
+                    {"source_x": 10.0, "source_y": 0.0, "stage_x": 1.0, "stage_y": 0.0},
+                    {"source_x": 10.0, "source_y": 10.0, "stage_x": 1.0, "stage_y": 1.0},
+                    {"source_x": 0.0, "source_y": 10.0, "stage_x": 0.0, "stage_y": 1.0},
+                ],
+            },
+        )
+
+        self.assertEqual(report["transform"]["method"], "roi_linear_normalization")
+        self.assertEqual(report["transform"]["homography_status"], "template_only")
+
+    def test_coordinate_schema_documents_stage_columns(self) -> None:
+        schema = coordinate_schema("homography")
+
+        self.assertEqual([column["name"] for column in schema["columns"]], ["stage_x", "stage_y", "stage_inside_roi"])
 
 
 if __name__ == "__main__":

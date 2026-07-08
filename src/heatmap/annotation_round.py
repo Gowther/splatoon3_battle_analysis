@@ -9,6 +9,10 @@ from src.data_registry import display_path, load_registry, resolve_project_path
 from src.heatmap.quality_loop import build_quality_loop_report
 
 
+DEFAULT_MIN_LABELED_ROWS = 30
+DEFAULT_MIN_COMPLETE_GROUPS = 10
+
+
 def load_round_config(path: Path) -> dict[str, Any]:
     target = resolve_project_path(path) or path.expanduser()
     with target.open(encoding="utf-8") as f:
@@ -161,6 +165,97 @@ def evaluate_progress_gates(
     return checks
 
 
+def label_readiness(
+    progress: dict[str, Any],
+    *,
+    min_labeled_rows: int = DEFAULT_MIN_LABELED_ROWS,
+    min_complete_groups: int = DEFAULT_MIN_COMPLETE_GROUPS,
+) -> dict[str, Any]:
+    checks = evaluate_progress_gates(
+        progress,
+        min_labeled_rows=min_labeled_rows,
+        min_complete_groups=min_complete_groups,
+    )
+    return {
+        "status": "ready" if checks and all(check["ok"] for check in checks.values()) else "needs_labels",
+        "checks": checks,
+        "min_labeled_rows": min_labeled_rows,
+        "min_complete_groups": min_complete_groups,
+    }
+
+
+def blocking_reason(report_status: str, progress: dict[str, Any], progress_checks: dict[str, dict[str, Any]]) -> str:
+    failed_checks = [name for name, check in progress_checks.items() if not check["ok"]]
+    labeled_rows = int(progress.get("labeled_rows") or 0)
+    if failed_checks:
+        return "manual annotation progress gates failed: " + ", ".join(failed_checks)
+    if report_status == "needs_labels" and labeled_rows == 0:
+        return "manual x/y labels are required before heatmap recall, mean-error, and tuning comparisons"
+    if report_status == "needs_labels":
+        return "more manual x/y labels are required before this round is ready"
+    if report_status == "needs_review":
+        return "annotation quality gates or trajectory checks require review"
+    return ""
+
+
+def next_actions(
+    *,
+    round_id: str,
+    annotation_csv: Path,
+    package_dir: Path,
+    progress: dict[str, Any],
+    priority_tasks: list[dict[str, Any]],
+    readiness: dict[str, Any],
+) -> list[dict[str, str]]:
+    annotation_csv_text = display_path(annotation_csv)
+    package_dir_text = display_path(package_dir)
+    actions: list[dict[str, str]] = []
+    if int(progress.get("labeled_rows") or 0) == 0:
+        actions.append(
+            {
+                "id": "build_annotation_ui",
+                "reason": "create or refresh the static browser helper before manual labeling",
+                "command": (
+                    "python scripts/prepare_heatmap_annotation_round.py "
+                    f"--round-id {round_id} --package-dir {package_dir_text} --no-export --build-ui"
+                ),
+            }
+        )
+    if priority_tasks:
+        first_ids = ", ".join(task.get("annotation_id", "") for task in priority_tasks[:5])
+        actions.append(
+            {
+                "id": "fill_priority_labels",
+                "reason": f"fill x/y for the highest-value annotation ids first: {first_ids}",
+                "command": annotation_csv_text,
+            }
+        )
+    actions.append(
+        {
+            "id": "evaluate_annotations",
+            "reason": "measure recall and pixel error after labels are filled",
+            "command": f"python scripts/evaluate_heatmap_annotations.py {annotation_csv_text}",
+        }
+    )
+    if readiness.get("status") == "ready":
+        actions.append(
+            {
+                "id": "run_parameter_experiments",
+                "reason": "recommended label gate is satisfied",
+                "command": f"python scripts/run_heatmap_parameter_experiments.py --annotation-csv {annotation_csv_text} --write-configs",
+            }
+        )
+    else:
+        actions.append(
+            {
+                "id": "continue_labeling_before_tuning",
+                "reason": "recommended label gate is not satisfied yet",
+                "command": annotation_csv_text,
+            }
+        )
+    return actions
+
+
 def build_annotation_round_report(
     *,
     registry_path: Path,
@@ -199,6 +294,7 @@ def build_annotation_round_report(
         min_labeled_rows=min_labeled_rows,
         min_complete_groups=min_complete_groups,
     )
+    readiness = label_readiness(progress)
     status = "ready_for_evaluation" if progress.get("labeled_rows", 0) else "needs_labels"
     if quality_report.get("status") == "passed":
         status = "passed"
@@ -206,9 +302,12 @@ def build_annotation_round_report(
         status = "needs_review"
     if any(not check["ok"] for check in progress_checks.values()):
         status = "needs_labels"
+    template_path = template.expanduser()
+    reason = blocking_reason(status, progress, progress_checks)
     return {
         "schema_version": 1,
         "status": status,
+        "blocking_reason": reason,
         "round": {
             "id": round_id,
             "description": selected_round.get("description", ""),
@@ -221,6 +320,15 @@ def build_annotation_round_report(
         "progress": progress,
         "priority_tasks": priority_tasks,
         "progress_checks": progress_checks,
+        "label_readiness": readiness,
+        "next_actions": next_actions(
+            round_id=round_id,
+            annotation_csv=template_path,
+            package_dir=package_dir,
+            progress=progress,
+            priority_tasks=priority_tasks,
+            readiness=readiness,
+        ),
         "quality_loop": quality_report,
     }
 
@@ -242,6 +350,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- annotation_csv: `{report.get('annotation_csv', '')}`",
         f"- matches: {', '.join(round_info.get('matches', []))}",
         f"- frames_per_match: {round_info.get('frames_per_match', '')}",
+        f"- blocking_reason: `{report.get('blocking_reason', '')}`",
         "",
         "## Progress",
         "",
@@ -266,6 +375,13 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append(f"| {key} | {check['expected']} | {check['actual']} | {status} |")
     else:
         lines.append("| none |  |  | passed |")
+
+    readiness = report.get("label_readiness", {})
+    readiness_checks = readiness.get("checks", {})
+    lines.extend(["", "## Recommended Readiness", "", f"- status: `{readiness.get('status', '')}`", "", "| check | expected | actual | status |", "| --- | --- | --- | --- |"])
+    for key, check in readiness_checks.items():
+        status = "passed" if check["ok"] else "failed"
+        lines.append(f"| {key} | {check['expected']} | {check['actual']} | {status} |")
 
     lines.extend(["", "## Matches", "", "| match | rows | labeled | skipped | complete groups |", "| --- | ---: | ---: | ---: | ---: |"])
     for match_id, item in sorted(progress.get("matches", {}).items()):
@@ -292,6 +408,15 @@ def render_markdown(report: dict[str, Any]) -> str:
             )
     else:
         lines.append("| none |  |  |  |  |  |")
+
+    lines.extend(["", "## Next Actions", ""])
+    actions = report.get("next_actions", [])
+    if actions:
+        for action in actions:
+            lines.append(f"- `{action.get('id', '')}`: {action.get('reason', '')}")
+            lines.append(f"  - `{action.get('command', '')}`")
+    else:
+        lines.append("- No next actions.")
 
     annotation_ui = report.get("annotation_ui", {})
     if annotation_ui:

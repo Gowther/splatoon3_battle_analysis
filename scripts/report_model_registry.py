@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.model_registry import DEFAULT_MODEL_REGISTRY, build_model_registry_report, load_model_registry, render_markdown, write_json
+from src.model_registry import DEFAULT_MODEL_REGISTRY, build_model_registry_report, load_model_registry, render_markdown
+from src.report_io import strict_exit_code, write_json_report, write_text_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -21,19 +22,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def write_text(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    print(f"wrote: {path}")
-
-
 def main() -> int:
     args = parse_args()
     report = build_model_registry_report(load_model_registry(args.registry), verify_hash=args.hash)
-    write_text(args.output.expanduser(), render_markdown(report))
-    write_json(args.json_output.expanduser(), report)
+    write_text_report(args.output.expanduser(), render_markdown(report))
+    write_json_report(args.json_output.expanduser(), report)
     print(f"model registry status: {report['status']}")
-    return 1 if args.strict and report["status"] != "passed" else 0
+    return strict_exit_code(report["status"], args.strict, passing_statuses={"passed"})
 
 
 if __name__ == "__main__":

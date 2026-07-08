@@ -14,6 +14,37 @@
         "yolov5/valid/labels",
         "legacy/yolov5_training/data.yaml"
       ],
+      "dataset_spec": {
+        "format": "yolo_detection",
+        "data_yaml": "legacy/yolov5_training/data.yaml",
+        "splits": {
+          "train": {
+            "images": "yolov5/train/images",
+            "labels": "yolov5/train/labels"
+          },
+          "val": {
+            "images": "yolov5/valid/images",
+            "labels": "yolov5/valid/labels"
+          }
+        },
+        "class_names": [
+          "alive",
+          "dead",
+          "fixed_count",
+          "kill_log",
+          "lead",
+          "map_info",
+          "map_player_dead",
+          "map_player_position",
+          "message",
+          "moving_count",
+          "object",
+          "other_player",
+          "penalty",
+          "player",
+          "special"
+        ]
+      },
       "candidate_output_dir": "outputs/model_training/ui_detector_yolo",
       "baseline_model": "models/the_model.pt",
       "candidate_command": "python yolov5/train.py --img 640 --batch 16 --epochs 50 --data legacy/yolov5_training/data.yaml --weights models/the_model.pt --project outputs/model_training/ui_detector_yolo --name candidate",
@@ -32,6 +63,21 @@
         "outputs/model_training/count_ocr_dataset/labels/val",
         "outputs/model_training/count_ocr_dataset/data.yaml"
       ],
+      "dataset_spec": {
+        "format": "yolo_detection",
+        "data_yaml": "outputs/model_training/count_ocr_dataset/data.yaml",
+        "splits": {
+          "train": {
+            "images": "outputs/model_training/count_ocr_dataset/images/train",
+            "labels": "outputs/model_training/count_ocr_dataset/labels/train"
+          },
+          "val": {
+            "images": "outputs/model_training/count_ocr_dataset/images/val",
+            "labels": "outputs/model_training/count_ocr_dataset/labels/val"
+          }
+        },
+        "class_names": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+      },
       "candidate_output_dir": "outputs/model_training/count_ocr_yolo",
       "baseline_model": "models/ocr_model.pt",
       "candidate_command": "python yolov5/train.py --img 320 --batch 16 --epochs 50 --data outputs/model_training/count_ocr_dataset/data.yaml --weights models/ocr_model.pt --project outputs/model_training/count_ocr_yolo --name candidate",
@@ -50,6 +96,38 @@
         "outputs/model_training/message_ocr_dataset/labels/val",
         "outputs/model_training/message_ocr_dataset/data.yaml"
       ],
+      "dataset_spec": {
+        "format": "yolo_detection",
+        "data_yaml": "outputs/model_training/message_ocr_dataset/data.yaml",
+        "splits": {
+          "train": {
+            "images": "outputs/model_training/message_ocr_dataset/images/train",
+            "labels": "outputs/model_training/message_ocr_dataset/labels/train"
+          },
+          "val": {
+            "images": "outputs/model_training/message_ocr_dataset/images/val",
+            "labels": "outputs/model_training/message_ocr_dataset/labels/val"
+          }
+        },
+        "class_names": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "A",
+          "B",
+          "C",
+          "D",
+          "E",
+          "F"
+        ]
+      },
       "candidate_output_dir": "outputs/model_training/message_ocr_yolo",
       "baseline_model": "models/message_ocr_model.pt",
       "candidate_command": "python yolov5/train.py --img 320 --batch 16 --epochs 50 --data outputs/model_training/message_ocr_dataset/data.yaml --weights models/message_ocr_model.pt --project outputs/model_training/message_ocr_yolo --name candidate",

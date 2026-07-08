@@ -8,7 +8,10 @@ from pathlib import Path
 from src.heatmap.annotation_round import (
     annotation_priority_tasks,
     annotation_progress,
+    blocking_reason,
     evaluate_progress_gates,
+    label_readiness,
+    next_actions,
     render_markdown,
     resolve_round,
 )
@@ -69,6 +72,29 @@ class HeatmapAnnotationRoundTests(unittest.TestCase):
         self.assertFalse(checks["min_labeled_rows"]["ok"])
         self.assertFalse(checks["min_complete_groups"]["ok"])
 
+    def test_label_readiness_uses_recommended_manual_label_gate(self) -> None:
+        readiness = label_readiness({"labeled_rows": 30, "complete_frame_team_groups": 10})
+
+        self.assertEqual(readiness["status"], "ready")
+        self.assertTrue(readiness["checks"]["min_labeled_rows"]["ok"])
+
+    def test_blocking_reason_explains_missing_manual_labels(self) -> None:
+        reason = blocking_reason("needs_labels", {"labeled_rows": 0}, {})
+
+        self.assertIn("manual x/y labels", reason)
+
+    def test_next_actions_include_parameter_experiments_after_readiness(self) -> None:
+        actions = next_actions(
+            round_id="r1",
+            annotation_csv=Path("outputs/round/annotation_template.csv"),
+            package_dir=Path("outputs/round"),
+            progress={"labeled_rows": 30},
+            priority_tasks=[],
+            readiness={"status": "ready"},
+        )
+
+        self.assertEqual(actions[-1]["id"], "run_parameter_experiments")
+
     def test_annotation_priority_tasks_prefers_jump_resets_and_one_per_group(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "annotation.csv"
@@ -125,9 +151,12 @@ class HeatmapAnnotationRoundTests(unittest.TestCase):
         markdown = render_markdown(
             {
                 "status": "needs_labels",
+                "blocking_reason": "manual labels required",
                 "round": {"id": "r1", "matches": [], "frames_per_match": 1},
                 "progress": {},
                 "progress_checks": {},
+                "label_readiness": {"status": "needs_labels", "checks": {}},
+                "next_actions": [],
                 "priority_tasks": [],
                 "annotation_ui": {
                     "status": "ready",
