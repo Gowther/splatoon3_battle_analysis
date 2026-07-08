@@ -6,7 +6,9 @@ import unittest
 from pathlib import Path
 
 from src.analysis_pipeline import REQUIRED_DETECTION_CLASSES
+from src.analysis_preview import PreviewSaveState, preview_frame_name
 from src.analysis_runtime import CSV_HEADER, preview_dir_from_arg, write_analysis_csv
+from src.analysis_warmup import WeaponWarmupState, record_weapon_vote
 from src.run_analysis import CSV_HEADER as RUN_ANALYSIS_CSV_HEADER
 from src.run_analysis import REQUIRED_DETECTION_CLASSES as RUN_ANALYSIS_REQUIRED_DETECTION_CLASSES
 
@@ -46,6 +48,23 @@ class RunAnalysisRefactorTests(unittest.TestCase):
 
             self.assertEqual(result, path)
             self.assertTrue(path.exists())
+
+    def test_preview_save_state_tracks_limit(self) -> None:
+        state = PreviewSaveState(Path("/tmp/previews"), limit=2, saved=2)
+
+        self.assertTrue(state.enabled)
+        self.assertFalse(state.can_save)
+        self.assertEqual(preview_frame_name(12, 3.46), "frame_00012_3.5s.jpg")
+
+    def test_weapon_warmup_state_votes_until_complete(self) -> None:
+        state = WeaponWarmupState()
+        vote = ["a", "b", "c", "d", "e", "f", "g", "h"]
+
+        record_weapon_vote(state, vote, warmup_frames=2)
+        self.assertIsNone(state.final_weapons)
+        record_weapon_vote(state, vote, warmup_frames=2)
+
+        self.assertEqual(state.final_weapons, vote)
 
 
 if __name__ == "__main__":

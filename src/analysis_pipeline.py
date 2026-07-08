@@ -8,7 +8,9 @@ from typing import Any, Dict, List, Optional
 
 import cv2
 
+from src.analysis_preview import PreviewSaveState, maybe_save_preview
 from src.analysis_runtime import AnalysisRunResult, preview_dir_from_arg
+from src.analysis_warmup import WeaponWarmupState, update_weapon_warmup
 from src.core.paths import ROOT, model_path
 from src.detection import (
     by_class,
@@ -21,7 +23,7 @@ from src.detection import (
 )
 from src.media import frame_iter
 from src.ocr import count_numbers, first_image_for_class, message_text, penalty_numbers
-from src.weapons import ImageTransform, classify_weapons, load_weapon_names, vote_weapons, weapon_model_output_count
+from src.weapons import ImageTransform, load_weapon_names, weapon_model_output_count
 
 
 REQUIRED_DETECTION_CLASSES = [
@@ -129,27 +131,6 @@ def analyze_results(
     return row
 
 
-def update_weapon_warmup(
-    results,
-    args: argparse.Namespace,
-    models: DetectionModels,
-    weapons: WeaponRuntime,
-    device: str,
-    weapon_votes: List[Optional[List[str]]],
-    final_weapons: Optional[List[str]],
-) -> Optional[List[str]]:
-    if final_weapons is not None or len(weapon_votes) >= args.warmup_frames:
-        return final_weapons
-    vote = classify_weapons(results, weapons.model, weapons.names, device, weapons.transform, models.ids)
-    if vote:
-        weapon_votes.append(vote)
-        print(f"Weapon warmup frame {len(weapon_votes)}/{args.warmup_frames}: {vote}")
-    if len(weapon_votes) >= args.warmup_frames:
-        final_weapons = vote_weapons(weapon_votes)
-        print(f"Weapon warmup complete: {final_weapons}")
-    return final_weapons
-
-
 def analyze_frame_stream(
     args: argparse.Namespace,
     input_path: Path,
@@ -158,12 +139,10 @@ def analyze_frame_stream(
     weapons: WeaponRuntime,
 ) -> AnalysisRunResult:
     rows: List[List[object]] = []
-    weapon_votes: List[Optional[List[str]]] = []
-    final_weapons: Optional[List[str]] = None
+    weapon_warmup = WeaponWarmupState()
     analyzed = 0
-    saved_previews = 0
     analysis_time = dt.datetime.now().isoformat(timespec="seconds")
-    save_preview_dir = preview_dir_from_arg(args.save_preview_dir)
+    preview_save = PreviewSaveState(preview_dir_from_arg(args.save_preview_dir), args.save_preview_limit)
 
     for _, elapsed, frame_bgr in frame_iter(
         input_path,
@@ -174,14 +153,15 @@ def analyze_frame_stream(
     ):
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         results = models.detect_model(frame_rgb, 640)
-        final_weapons = update_weapon_warmup(
+        weapon_warmup = update_weapon_warmup(
             results,
-            args,
-            models,
-            weapons,
-            device,
-            weapon_votes,
-            final_weapons,
+            warmup_frames=args.warmup_frames,
+            detection_ids=models.ids,
+            weapon_model=weapons.model,
+            weapon_names=weapons.names,
+            weapon_transform=weapons.transform,
+            device=device,
+            state=weapon_warmup,
         )
 
         rows.append(
@@ -192,7 +172,7 @@ def analyze_frame_stream(
                 models.ids,
                 models.ocr_model,
                 models.message_model,
-                final_weapons,
+                weapon_warmup.final_weapons,
                 args.count_box_conf,
                 args.digit_conf,
                 args.message_box_conf,
@@ -201,12 +181,11 @@ def analyze_frame_stream(
         )
         analyzed += 1
 
-        if args.preview or save_preview_dir:
+        if args.preview or preview_save.enabled:
             preview = draw_preview(frame_bgr, results, models.detect_model.names)
 
-        if save_preview_dir and saved_previews < args.save_preview_limit:
-            cv2.imwrite(str(save_preview_dir / f"frame_{analyzed:05d}_{elapsed:.1f}s.jpg"), preview)
-            saved_previews += 1
+        if preview_save.can_save:
+            maybe_save_preview(preview, preview_save, analyzed, elapsed)
 
         if args.preview:
             if args.preview_scale != 1.0:
@@ -221,4 +200,4 @@ def analyze_frame_stream(
     if args.preview:
         cv2.destroyAllWindows()
 
-    return AnalysisRunResult(rows, analyzed, final_weapons)
+    return AnalysisRunResult(rows, analyzed, weapon_warmup.final_weapons)
