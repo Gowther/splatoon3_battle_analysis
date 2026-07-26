@@ -1,6 +1,6 @@
 # Stage Coordinate Normalization
 
-这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-5：homography 已能真正生效，有参考帧包、Web 点选标注、管线自动产出，以及控制点几何质量门禁。
+这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-6：homography 已能真正生效，有参考帧包、Web 点选标注、管线自动产出、几何质量门禁，以及 stage 注册表跨场次复用与交叉验证。
 
 ## 为什么需要这一层
 
@@ -250,6 +250,64 @@ Goal 5 之后仍未解决：这些都是几何自洽性检查，无法判断地�
 官方地图上的那个位置——填错但几何合理的点仍然只能靠人复查，
 需要 Goal 6 的 stage 注册表跨场次交叉验证。
 
+## Goal 6: stage 注册表与交叉验证
+
+Goal 5 的四道门禁都是**单份资产的自洽性检查**。它们看不见一类错误：
+地标点选得几何合理，但对错了位置。
+
+实测：把某个角点的 `target` 从 `1.0` 改成 `0.75`，Goal 5 的
+`reprojection`、`coverage`、`corners`、`frame_drift` **全部通过**，
+状态是 `ready`。单份资产无论如何自查都发现不了这个错误——
+因为它内部完全自洽。
+
+唯一的外部参照是**同一张地图的另一次独立标注**。
+
+```bash
+# 把对战登记到 stage
+.venv/bin/python scripts/report_stage_registry.py --register scorch_gorge match_9
+.venv/bin/python scripts/report_stage_registry.py --register scorch_gorge match_10
+
+# 交叉验证
+.venv/bin/python scripts/report_stage_registry.py --strict
+```
+
+注册表 `config/stage_registry.json` 按 stage 而非 match 组织：
+
+```json
+{
+  "schema_version": 1,
+  "stages": [
+    {
+      "stage_id": "scorch_gorge",
+      "matches": ["match_9", "match_10"],
+      "control_point_asset": "config/stage_control_points/scorch_gorge.json"
+    }
+  ]
+}
+```
+
+带来两件事：
+
+1. **复用**：同一 stage 下的对战共享一份控制点资产，新对战登记后
+   直接继承，不需要重新标注。一个 match 只能属于一个 stage，
+   重复登记会自动从旧 stage 移出。
+2. **交叉验证**：如果某场对战另有自己的 `<match_id>.json` 资产，
+   会把 ROI 上 9×9 的采样点分别过两个 homography，比较它们落到的
+   stage 坐标。同一张地图的两次标注应该把同一个像素送到同一个位置。
+
+默认阈值 `0.05`（stage 宽度的 5%）。实测对照：
+
+| 情况 | 最大分歧 | 判定 |
+| --- | --- | --- |
+| 同一 stage，手标有几像素抖动 | `0.0051` | `ready` |
+| 一个地标对错位置（Goal 5 全绿） | `0.2500` | `disagrees` |
+
+报告会直接点名出问题的对战，`--strict` 退出码 1。
+
+Goal 6 之后仍未解决：交叉验证需要至少两次独立标注，只标了一场的 stage
+仍然无人可对照；且两次都错到同一处时依然测不出来。此外目前没有任何
+match 声明 stage，注册表是空的——真正的价值要等第二场同图对战标注后才体现。
+
 ## 相关文件
 
 | 路径 | 作用 |
@@ -257,10 +315,13 @@ Goal 5 之后仍未解决：这些都是几何自洽性检查，无法判断地�
 | `src/heatmap/stage_coordinates.py` | ROI 归一化、控制点解析、homography 求解与重投影自检。 |
 | `src/heatmap/stage_reference.py` | 网格参考帧导出、控制点草稿与填写说明生成。 |
 | `src/heatmap/stage_quality.py` | 控制点覆盖度、角点合理性与跨帧稳定性评估。 |
+| `src/heatmap/stage_registry.py` | stage 注册表、跨场次资产复用与标注交叉验证。 |
 | `src/stage_labeling_workbench.py` | Web 场地标注页面的包发现、草稿保存校验与资产提升。 |
 | `scripts/build_stage_control_points.py` | 生成和校验控制点资产。 |
 | `scripts/report_stage_control_point_quality.py` | 控制点几何质量门禁报告。 |
+| `scripts/report_stage_registry.py` | stage 登记、复用状态与交叉验证报告。 |
 | `scripts/export_stage_reference.py` | 导出地标标注用的参考帧包。 |
 | `scripts/report_stage_coordinates.py` | 报告归一化状态并导出 `stage_x/stage_y`。 |
 | `config/stage_control_points.template.json` | 控制点模板。 |
 | `config/stage_control_points/` | 真实控制点资产目录。 |
+| `config/stage_registry.json` | stage 到对战的映射与规范资产声明。 |

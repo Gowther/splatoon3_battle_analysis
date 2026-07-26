@@ -32,6 +32,7 @@ Use these entrypoints for active development:
 | `python scripts/build_stage_control_points.py` | Build or validate a stage control-point asset and report homography reprojection error. |
 | `python scripts/export_stage_reference.py` | Export grid-annotated reference frames and a control-point draft for stage landmark labeling. |
 | `python scripts/report_stage_control_point_quality.py` | Gate stage control points on reprojection, ROI coverage, corner sanity, and cross-frame drift. |
+| `python scripts/report_stage_registry.py` | Register matches to stages, reuse control points across matches, and cross-validate labelings. |
 | `python scripts/export_heatmap_annotation_package.py` | Export frames and CSV templates for manual heatmap point labels. |
 | `python scripts/evaluate_heatmap_annotations.py` | Evaluate heatmap predictions against manual player point labels. |
 | `python scripts/export_heatmap_anomalies.py` | Export low-quality heatmap frames for manual review. |
@@ -206,6 +207,7 @@ python scripts/report_stage_coordinates.py --config src/heatmap/config_match9.ya
 python scripts/build_stage_control_points.py --config src/heatmap/config_match9.yaml --stage-id match9_seed --report outputs/stage_control_points.md --strict
 python scripts/export_stage_reference.py --config src/heatmap/config_match9.yaml --stage-id match9_stage --times 30,60,90
 python scripts/report_stage_control_point_quality.py --config src/heatmap/config_match9.yaml --strict
+python scripts/report_stage_registry.py --strict
 python scripts/export_heatmap_annotation_package.py --output-dir outputs/annotation_samples
 python scripts/evaluate_heatmap_annotations.py outputs/annotation_samples/annotation_template.csv
 python scripts/export_heatmap_anomalies.py --output-dir outputs/heatmap_anomalies
