@@ -1,6 +1,6 @@
 # Stage Coordinate Normalization
 
-这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-6：homography 已能真正生效，有参考帧包、Web 点选标注、管线自动产出、几何质量门禁，以及 stage 注册表跨场次复用与交叉验证。
+这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-7：homography 已能真正生效，有参考帧包、Web 点选标注、管线自动产出、几何质量门禁、stage 注册表交叉验证，以及固定画布的标准场地渲染。
 
 ## 为什么需要这一层
 
@@ -308,6 +308,45 @@ Goal 6 之后仍未解决：交叉验证需要至少两次独立标注，只标�
 仍然无人可对照；且两次都错到同一处时依然测不出来。此外目前没有任何
 match 声明 stage，注册表是空的——真正的价值要等第二场同图对战标注后才体现。
 
+## Goal 7: 标准场地渲染
+
+前面 6 个 goal 产出的都是数据和校验，唯一能看的图仍然是叠在源视频帧上的
+像素坐标热力图——**换一场对战就没法直接比较**。
+
+Goal 7 增加一条独立的渲染路径：
+
+```bash
+.venv/bin/python scripts/render_stage_heatmaps.py \
+  --config src/heatmap/config_match9.yaml
+```
+
+输出到 `outputs/<heatmap>/rendered_stage/`：
+
+- `stage_heatmap_<team>.png`: 每队一张。
+- `stage_heatmap_combined.png`: 各队叠加。
+- `stage_routes.png`: 路线图。
+
+和现有渲染的关键区别：
+
+| | 现有渲染 | stage 渲染 |
+| --- | --- | --- |
+| 底图 | 源视频某一帧 | 固定深色画布 + 0..1 网格 |
+| 坐标 | 源视频像素 | 归一化 stage 坐标 |
+| 尺寸 | 随视频分辨率 | 固定 900×900 |
+| 跨场次 | 不可比 | **同一像素 = 同一位置** |
+
+因为坐标已经归一化，任意两场对战渲染到的画布完全对齐，可以直接叠加或并排
+对比。热力半径和模糊按 ROI 到画布的比例换算，不需要重新调参。
+
+路线图沿用现有渲染的连线规则：只连接 `track_status == matched`
+且 `step_distance <= route_max_draw_step_px` 的相邻点。这一点很重要——
+第一版没做这个约束时，画面被大量无关位置之间的长跳线填满，完全不可读。
+
+没有 stage 坐标时命令不会失败，只报 `no_points` 并提示先提升控制点资产。
+
+Goal 7 之后仍未解决：stage 渲染只覆盖 `player_tracks.csv`；
+真正的跨场次聚合叠加图留给 Goal 8。
+
 ## 相关文件
 
 | 路径 | 作用 |
@@ -316,10 +355,12 @@ match 声明 stage，注册表是空的——真正的价值要等第二场同�
 | `src/heatmap/stage_reference.py` | 网格参考帧导出、控制点草稿与填写说明生成。 |
 | `src/heatmap/stage_quality.py` | 控制点覆盖度、角点合理性与跨帧稳定性评估。 |
 | `src/heatmap/stage_registry.py` | stage 注册表、跨场次资产复用与标注交叉验证。 |
+| `src/heatmap/render_stage_space.py` | 固定画布的标准场地热力图与路线渲染。 |
 | `src/stage_labeling_workbench.py` | Web 场地标注页面的包发现、草稿保存校验与资产提升。 |
 | `scripts/build_stage_control_points.py` | 生成和校验控制点资产。 |
 | `scripts/report_stage_control_point_quality.py` | 控制点几何质量门禁报告。 |
 | `scripts/report_stage_registry.py` | stage 登记、复用状态与交叉验证报告。 |
+| `scripts/render_stage_heatmaps.py` | 渲染标准场地热力图与路线图。 |
 | `scripts/export_stage_reference.py` | 导出地标标注用的参考帧包。 |
 | `scripts/report_stage_coordinates.py` | 报告归一化状态并导出 `stage_x/stage_y`。 |
 | `config/stage_control_points.template.json` | 控制点模板。 |
