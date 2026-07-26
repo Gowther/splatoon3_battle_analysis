@@ -1224,6 +1224,10 @@ let state = null;
 let snapshot = null;
 let activeDecision = "accurate";
 let snapshotTimer = null;
+// Fields the reviewer marked as wrong. Kept outside the snapshot so an
+// automatic snapshot refresh (fired on every timeupdate/seeked) cannot wipe
+// checks the reviewer already made.
+let markedFields = new Set();
 
 const pageStatus = document.getElementById("pageStatus");
 const video = document.getElementById("reviewVideo");
@@ -1310,6 +1314,9 @@ function chooseSuggestedSources() {
 function applyVideoSource() {
   const item = selectedVideo();
   if (!item) return;
+  // Marks belong to a specific video's fields; drop them on switch so nothing
+  // carries over (the snapshot filter would drop them too, this is explicit).
+  markedFields = new Set();
   video.src = `/api/video?path=${encodeURIComponent(item.path)}`;
   document.getElementById("videoTitle").textContent = item.label;
   document.getElementById("videoMeta").textContent = item.path;
@@ -1473,20 +1480,54 @@ function renderRows(source, rows) {
   `;
 }
 
+function currentFieldValues() {
+  const values = [];
+  for (const source of snapshot?.sources || []) {
+    for (const field of source.fieldnames || []) {
+      values.push(`${source.path}::${field}`);
+    }
+  }
+  return values;
+}
+
 function renderFieldList() {
   if (!snapshot || !snapshot.sources.length) {
     fieldList.innerHTML = '<span class="muted">没有可标记字段</span>';
+    fieldList.dataset.signature = "";
+    return;
+  }
+  const values = currentFieldValues();
+  // Drop marks for fields that no longer exist so a stale mark cannot be saved.
+  markedFields = new Set([...markedFields].filter(value => values.includes(value)));
+  const signature = values.join("|");
+  // The snapshot refreshes on every timeupdate. Rebuilding the checkbox DOM
+  // each time would clear the reviewer's checks (and swallow an in-flight
+  // click), so only rebuild when the field set actually changes; otherwise
+  // just reconcile checked state against markedFields.
+  if (fieldList.dataset.signature === signature) {
+    for (const input of fieldList.querySelectorAll("input[type=checkbox]")) {
+      input.checked = markedFields.has(input.value);
+    }
     return;
   }
   const html = [];
   for (const source of snapshot.sources) {
     for (const field of source.fieldnames || []) {
       const value = `${source.path}::${field}`;
-      html.push(`<label><input type="checkbox" value="${escapeHtml(value)}"> ${escapeHtml(source.kind)} / ${escapeHtml(field)}</label>`);
+      const checked = markedFields.has(value) ? " checked" : "";
+      html.push(`<label><input type="checkbox" value="${escapeHtml(value)}"${checked}> ${escapeHtml(source.kind)} / ${escapeHtml(field)}</label>`);
     }
   }
   fieldList.innerHTML = html.join("");
+  fieldList.dataset.signature = signature;
 }
+
+fieldList.addEventListener("change", event => {
+  const input = event.target;
+  if (!input || input.type !== "checkbox") return;
+  if (input.checked) markedFields.add(input.value);
+  else markedFields.delete(input.value);
+});
 
 function setDecision(decision) {
   activeDecision = decision;
@@ -1501,10 +1542,16 @@ function setDecision(decision) {
 
 async function saveReview() {
   if (!snapshot) await loadSnapshot();
-  const incorrectFields = Array.from(fieldList.querySelectorAll("input:checked")).map(input => input.value);
+  // markedFields is the source of truth: it survives snapshot re-renders,
+  // whereas the DOM checkboxes are rebuilt whenever the field set changes.
+  const incorrectFields = currentFieldValues().filter(value => markedFields.has(value));
+  // Record the time the reviewer actually saw and judged. snapshot.time is the
+  // debounced instant the rows were fetched for; video.currentTime may have
+  // advanced a few frames past it if playback continued after the snapshot.
+  const reviewTime = Number.isFinite(snapshot?.time) ? snapshot.time : (video.currentTime || 0);
   const payload = {
     video_path: videoSelect.value,
-    time: video.currentTime || 0,
+    time: reviewTime,
     source_paths: selectedSourcePaths(),
     decision: activeDecision,
     incorrect_fields: incorrectFields,
