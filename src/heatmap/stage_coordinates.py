@@ -80,25 +80,30 @@ def normalize_point(x: float, y: float, source_box: StageBox, *, clamp: bool = F
     return {"stage_x": stage_x, "stage_y": stage_y, "inside_roi": inside}
 
 
-def parse_control_point(value: Mapping[str, Any]) -> dict[str, float]:
+def parse_control_point(value: Mapping[str, Any]) -> dict[str, Any]:
     if "source" in value and "target" in value:
         source = value["source"]
         target = value["target"]
-        return {
+        point: dict[str, Any] = {
             "source_x": float(source[0]),
             "source_y": float(source[1]),
             "stage_x": float(target[0]),
             "stage_y": float(target[1]),
         }
-    return {
-        "source_x": float(value.get("source_x", value.get("video_x", value.get("x")))),
-        "source_y": float(value.get("source_y", value.get("video_y", value.get("y")))),
-        "stage_x": float(value.get("stage_x", value.get("target_x"))),
-        "stage_y": float(value.get("stage_y", value.get("target_y"))),
-    }
+    else:
+        point = {
+            "source_x": float(value.get("source_x", value.get("video_x", value.get("x")))),
+            "source_y": float(value.get("source_y", value.get("video_y", value.get("y")))),
+            "stage_x": float(value.get("stage_x", value.get("target_x"))),
+            "stage_y": float(value.get("stage_y", value.get("target_y"))),
+        }
+    name = value.get("name")
+    if name:
+        point["name"] = str(name)
+    return point
 
 
-def control_points_from_config(config: Mapping[str, Any]) -> list[dict[str, float]]:
+def control_points_from_config(config: Mapping[str, Any]) -> list[dict[str, Any]]:
     map_view = config.get("map_view", {}) if isinstance(config, Mapping) else {}
     stage_coordinates = config.get("stage_coordinates", {}) if isinstance(config, Mapping) else {}
     candidates: Any = []
@@ -114,7 +119,7 @@ def control_points_from_config(config: Mapping[str, Any]) -> list[dict[str, floa
         candidates = stage_coordinates.get("control_points") or []
     if not isinstance(candidates, list):
         return []
-    points: list[dict[str, float]] = []
+    points: list[dict[str, Any]] = []
     for item in candidates:
         if isinstance(item, Mapping):
             points.append(parse_control_point(item))
@@ -150,7 +155,7 @@ def merge_control_point_asset(config: Mapping[str, Any], asset: Mapping[str, Any
     return output
 
 
-def control_point_summary(control_points: list[dict[str, float]], source_box: StageBox | None = None) -> dict[str, Any]:
+def control_point_summary(control_points: list[dict[str, Any]], source_box: StageBox | None = None) -> dict[str, Any]:
     target_out_of_bounds: list[int] = []
     source_out_of_roi: list[int] = []
     duplicate_sources: list[str] = []
@@ -194,7 +199,7 @@ def coordinate_schema(method: str) -> dict[str, Any]:
     }
 
 
-def homography_from_control_points(control_points: list[dict[str, float]]) -> list[list[float]]:
+def homography_from_control_points(control_points: list[dict[str, Any]]) -> list[list[float]]:
     if len(control_points) < 4:
         raise ValueError("at least four stage control points are required")
     rows: list[list[float]] = []
@@ -228,6 +233,44 @@ def normalize_point_homography(x: float, y: float, matrix: list[list[float]], *,
 
 def format_coordinate(value: float) -> str:
     return f"{value:.6f}"
+
+
+DEFAULT_REPROJECTION_TOLERANCE = 0.02
+
+
+def reprojection_report(
+    control_points: list[dict[str, Any]],
+    matrix: list[list[float]],
+    *,
+    tolerance: float = DEFAULT_REPROJECTION_TOLERANCE,
+) -> dict[str, Any]:
+    """Map each control point through the solved matrix and compare it to its declared target."""
+    errors: list[dict[str, Any]] = []
+    for index, point in enumerate(control_points):
+        mapped = normalize_point_homography(point["source_x"], point["source_y"], matrix)
+        distance = float(
+            np.hypot(mapped["stage_x"] - point["stage_x"], mapped["stage_y"] - point["stage_y"])
+        )
+        errors.append(
+            {
+                "index": index,
+                "name": point.get("name", f"point_{index + 1}"),
+                "error": distance,
+            }
+        )
+    if not errors:
+        return {"status": "no_control_points", "tolerance": tolerance, "point_errors": []}
+    worst = max(errors, key=lambda item: item["error"])
+    max_error = float(worst["error"])
+    mean_error = float(sum(item["error"] for item in errors) / len(errors))
+    return {
+        "status": "high_error" if max_error > tolerance else "ready",
+        "tolerance": tolerance,
+        "max_error": max_error,
+        "mean_error": mean_error,
+        "worst_point": worst["name"],
+        "point_errors": errors,
+    }
 
 
 def normalize_rows(
@@ -330,10 +373,12 @@ def build_stage_coordinate_report(
     control_summary = control_point_summary(control_points, source_box)
     homography_matrix: list[list[float]] | None = None
     homography_status = "template_only" if asset_is_template else "needs_control_points"
+    reprojection: dict[str, Any] = {"status": "not_available"}
     if len(control_points) >= 4 and not asset_is_template:
         try:
             homography_matrix = homography_from_control_points(control_points)
-            homography_status = "ready"
+            reprojection = reprojection_report(control_points, homography_matrix)
+            homography_status = "ready" if reprojection["status"] == "ready" else reprojection["status"]
         except ValueError as exc:
             transform_errors.append(str(exc))
             homography_status = "invalid"
@@ -351,6 +396,7 @@ def build_stage_coordinate_report(
             "control_points": control_summary,
             "control_point_asset": dict(control_point_asset or {}),
             "matrix": homography_matrix or [],
+            "reprojection": reprojection,
             "notes": "Uses stage-map homography when four or more control points are available; otherwise maps current video-pixel map ROI to 0..1 coordinates.",
         },
         "output_schema": coordinate_schema(method),
@@ -378,6 +424,125 @@ def build_stage_coordinate_report(
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def roi_corner_control_points(source_box: StageBox) -> list[dict[str, Any]]:
+    """Seed points that reproduce the current ROI linear mapping, for a reviewer to correct."""
+    corners = (
+        ("roi_top_left", source_box.x1, source_box.y1, 0.0, 0.0),
+        ("roi_top_right", source_box.x2, source_box.y1, 1.0, 0.0),
+        ("roi_bottom_right", source_box.x2, source_box.y2, 1.0, 1.0),
+        ("roi_bottom_left", source_box.x1, source_box.y2, 0.0, 1.0),
+    )
+    return [
+        {"name": name, "source": [source_x, source_y], "target": [stage_x, stage_y]}
+        for name, source_x, source_y, stage_x, stage_y in corners
+    ]
+
+
+def build_control_point_asset(
+    stage_id: str,
+    control_points: list[Mapping[str, Any]],
+    *,
+    template: bool = False,
+    notes: list[str] | None = None,
+) -> dict[str, Any]:
+    points: list[dict[str, Any]] = []
+    for index, raw in enumerate(control_points):
+        parsed = parse_control_point(raw)
+        points.append(
+            {
+                "name": parsed.get("name", f"point_{index + 1}"),
+                "source": [parsed["source_x"], parsed["source_y"]],
+                "target": [parsed["stage_x"], parsed["stage_y"]],
+            }
+        )
+    return {
+        "schema_version": 1,
+        "template": template,
+        "stage_id": stage_id,
+        "coordinate_space": "video_pixels",
+        "target_coordinate_space": "stage_normalized_0_1",
+        "control_points": points,
+        "notes": notes or [],
+    }
+
+
+def validate_control_point_asset(
+    asset: Mapping[str, Any],
+    *,
+    source_box: StageBox | None = None,
+    tolerance: float = DEFAULT_REPROJECTION_TOLERANCE,
+) -> dict[str, Any]:
+    """Check an asset can drive a homography, and report its reprojection error."""
+    points = [parse_control_point(point) for point in asset.get("control_points", []) if isinstance(point, Mapping)]
+    summary = control_point_summary(points, source_box)
+    errors: list[str] = []
+    if asset.get("template"):
+        errors.append("template assets are rejected; set template to false after replacing the example points")
+    if summary["count"] < 4:
+        errors.append(f"at least four control points are required, found {summary['count']}")
+    if summary["target_out_of_bounds_indices"]:
+        errors.append(f"target coordinates outside 0..1 at indices {summary['target_out_of_bounds_indices']}")
+    if summary["duplicate_sources"]:
+        errors.append(f"duplicate source points: {summary['duplicate_sources']}")
+
+    reprojection: dict[str, Any] = {"status": "not_available"}
+    if not errors:
+        try:
+            matrix = homography_from_control_points(points)
+            reprojection = reprojection_report(points, matrix, tolerance=tolerance)
+            if reprojection["status"] == "high_error":
+                errors.append(
+                    f"reprojection error {reprojection['max_error']:.6f} exceeds tolerance {tolerance} "
+                    f"at {reprojection['worst_point']}"
+                )
+        except (ValueError, np.linalg.LinAlgError) as exc:
+            errors.append(f"homography could not be solved: {exc}")
+
+    return {
+        "status": "ready" if not errors else "needs_control_points",
+        "stage_id": asset.get("stage_id", ""),
+        "control_points": summary,
+        "reprojection": reprojection,
+        "errors": errors,
+    }
+
+
+def render_control_point_markdown(report: Mapping[str, Any]) -> str:
+    summary = report.get("control_points", {})
+    reprojection = report.get("reprojection", {})
+    lines = [
+        "# Stage Control Points",
+        "",
+        f"- status: `{report.get('status', '')}`",
+        f"- stage_id: `{report.get('stage_id', '')}`",
+        f"- control_point_count: {summary.get('count', 0) if isinstance(summary, Mapping) else 0}",
+        f"- reprojection_status: `{reprojection.get('status', '') if isinstance(reprojection, Mapping) else ''}`",
+    ]
+    if isinstance(reprojection, Mapping) and reprojection.get("point_errors"):
+        lines.extend(
+            [
+                f"- max_error: {reprojection.get('max_error', 0):.6f}",
+                f"- mean_error: {reprojection.get('mean_error', 0):.6f}",
+                f"- worst_point: `{reprojection.get('worst_point', '')}`",
+                "",
+                "## Point Errors",
+                "",
+                "| name | error |",
+                "| --- | --- |",
+            ]
+        )
+        lines.extend(
+            f"| {item.get('name', '')} | {item.get('error', 0):.6f} |"
+            for item in reprojection.get("point_errors", [])
+        )
+    errors = report.get("errors", [])
+    if errors:
+        lines.extend(["", "## Errors", ""])
+        lines.extend(f"- {error}" for error in errors)
+    lines.append("")
+    return "\n".join(lines)
 
 
 def render_markdown(report: Mapping[str, Any]) -> str:
@@ -411,6 +576,20 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     normalized_output = points.get("normalized_output") if isinstance(points, Mapping) else ""
     if normalized_output:
         lines.append(f"- normalized_output: `{normalized_output}`")
+    reprojection = transform.get("reprojection", {}) if isinstance(transform, Mapping) else {}
+    if isinstance(reprojection, Mapping) and reprojection.get("point_errors"):
+        lines.extend(
+            [
+                "",
+                "## Reprojection",
+                "",
+                f"- status: `{reprojection.get('status', '')}`",
+                f"- tolerance: {reprojection.get('tolerance', 0)}",
+                f"- max_error: {reprojection.get('max_error', 0):.6f}",
+                f"- mean_error: {reprojection.get('mean_error', 0):.6f}",
+                f"- worst_point: `{reprojection.get('worst_point', '')}`",
+            ]
+        )
     errors = report.get("errors", [])
     if errors:
         lines.extend(["", "## Errors", ""])

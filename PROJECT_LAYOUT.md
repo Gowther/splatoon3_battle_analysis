@@ -23,7 +23,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/heatmap/config_template.py` | Supported | Registry-driven heatmap config override generation helpers. |
 | `src/heatmap/parameter_experiments.py` | Supported | Heatmap tracker parameter experiment planning and candidate config generation. |
 | `src/heatmap/productization.py` | Supported | Productization readiness and milestone reporting for heatmap outputs. |
-| `src/heatmap/stage_coordinates.py` | Supported | ROI-to-stage normalized coordinate helpers for heatmap points and tracks. |
+| `src/heatmap/stage_coordinates.py` | Supported | ROI-to-stage normalized coordinate helpers, control-point assets, and homography reprojection checks for heatmap points and tracks. |
 | `src/data_review_workbench.py` | Supported | Analysis-source discovery and video/CSV time-aligned snapshots for the data review page. |
 | `src/evidence_review_workbench.py` | Supported | Weapon/death frame evidence export, weapon slot crops, and reviewer verdict logging. |
 | `src/data_registry.py` | Supported | Data registry path resolution and validation support. |
