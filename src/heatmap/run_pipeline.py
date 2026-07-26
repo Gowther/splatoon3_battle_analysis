@@ -12,6 +12,48 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from src.heatmap.color_calibration import resolve_config
 from src.heatmap.extract_frames import ROOT, load_config, resolve_path
+from src.heatmap.stage_coordinates import (
+    build_stage_coordinate_report,
+    discover_control_point_asset,
+)
+
+
+def stage_tracks_csv_path(config: Dict) -> Path:
+    outputs = config.get("outputs", {})
+    configured = outputs.get("player_tracks_stage_csv") if isinstance(outputs, dict) else None
+    if isinstance(configured, str) and configured:
+        return resolve_path(configured)
+    return resolve_path(config["match"]["output_dir"]) / "player_tracks_stage.csv"
+
+
+def run_stage_normalization(config: Dict) -> Dict[str, Any]:
+    """Normalize player tracks to stage coordinates when a promoted asset exists."""
+    asset = discover_control_point_asset(config)
+    if asset is None:
+        return {"status": "no_asset", "method": "", "output": ""}
+    points_csv = resolve_path(config["outputs"]["player_tracks_csv"])
+    if not points_csv.exists():
+        return {"status": "no_points", "method": "", "output": "", "asset": asset.get("path", "")}
+    output_csv = stage_tracks_csv_path(config)
+    report = build_stage_coordinate_report(
+        config,
+        points_csv=points_csv,
+        normalized_csv=output_csv,
+        control_point_asset=asset,
+    )
+    transform = report.get("transform", {})
+    summary = report.get("points", {}).get("summary", {})
+    return {
+        "status": report.get("status", ""),
+        "method": transform.get("method", ""),
+        "homography_status": transform.get("homography_status", ""),
+        "reprojection": transform.get("reprojection", {}),
+        "asset": asset.get("path", ""),
+        "stage_id": asset.get("stage_id", ""),
+        "output": rel(output_csv),
+        "normalized_rows": summary.get("normalized_rows", 0),
+        "outside_roi_rows": summary.get("outside_roi_rows", 0),
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -95,6 +137,7 @@ def configured_output_paths(config: Dict) -> List[Path]:
         output_dir / "resolved_config.yaml",
         output_dir / "color_calibration_report.csv",
         output_dir / "run_manifest.json",
+        stage_tracks_csv_path(config),
     }
     for value in config.get("outputs", {}).values():
         if isinstance(value, str):
@@ -151,9 +194,18 @@ def write_run_manifest(
     report_path: Path,
     command_hint: str,
     cleaned_paths: List[str],
+    stage_normalization: Optional[Dict[str, Any]] = None,
 ) -> Path:
     output_dir = resolve_path(config["match"]["output_dir"])
     manifest_path = output_dir / "run_manifest.json"
+    extra_artifacts = {
+        "resolved_config": resolved_config_path,
+        "color_report": color_report_path,
+        "report": report_path,
+        "run_manifest": manifest_path,
+    }
+    if stage_normalization and stage_normalization.get("output"):
+        extra_artifacts["stage_tracks"] = resolve_path(stage_normalization["output"])
     manifest = {
         "schema_version": 1,
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
@@ -176,22 +228,20 @@ def write_run_manifest(
             "disable_auto_colors": args.disable_auto_colors,
         },
         "cleaned_paths": cleaned_paths,
-        "artifacts": artifact_status(
-            config,
-            {
-                "resolved_config": resolved_config_path,
-                "color_report": color_report_path,
-                "report": report_path,
-                "run_manifest": manifest_path,
-            },
-        ),
+        "stage_normalization": stage_normalization or {"status": "no_asset", "method": "", "output": ""},
+        "artifacts": artifact_status(config, extra_artifacts),
     }
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return manifest_path
 
 
-def write_report(config: Dict, command_hint: Optional[str] = None) -> Path:
+def write_report(
+    config: Dict,
+    command_hint: Optional[str] = None,
+    *,
+    stage_normalization: Optional[Dict[str, Any]] = None,
+) -> Path:
     outputs = config["outputs"]
     output_dir = resolve_path(config["match"]["output_dir"])
     report_path = resolve_path(outputs["report_md"])
@@ -301,6 +351,31 @@ def write_report(config: Dict, command_hint: Optional[str] = None) -> Path:
     lines.extend(metric_lines("Events", event_join, ["event_rows", "points_with_nearby_events", "events_with_nearby_points", "segments"]))
     lines.append("")
     lines.extend(metric_lines("Experimental Identity", identity, ["player_track_rows", "gap_rows", "route_images", "identity_warning"]))
+    stage_info = stage_normalization or {"status": "no_asset"}
+    lines.extend(["", "### Stage Normalization", ""])
+    if stage_info.get("status") == "ready":
+        reprojection = stage_info.get("reprojection", {}) if isinstance(stage_info.get("reprojection"), dict) else {}
+        lines.extend(
+            [
+                f"- method: `{stage_info.get('method', '')}`",
+                f"- control point asset: `{stage_info.get('asset', '')}`",
+                f"- stage tracks: `{stage_info.get('output', '')}`",
+                f"- normalized rows: {stage_info.get('normalized_rows', 0)}",
+                f"- reprojection max error: {reprojection.get('max_error', 0):.6f}"
+                if reprojection.get("point_errors")
+                else "- reprojection: not available",
+            ]
+        )
+    else:
+        lines.append(
+            f"- status: `{stage_info.get('status', 'no_asset')}`; label control points in the /stage-labeling "
+            "workbench page to enable homography output."
+        )
+    stage_limit_line = (
+        "- Stage coordinates use the promoted control-point homography; verify landmarks before trusting cross-match comparisons."
+        if stage_info.get("status") == "ready" and stage_info.get("method") == "homography"
+        else "- The current coordinate system is source-video pixels, not a normalized stage-map homography."
+    )
     lines.extend(
         [
             "",
@@ -310,7 +385,7 @@ def write_report(config: Dict, command_hint: Optional[str] = None) -> Path:
             "- `team_routes.png` shows team-level local movement segments, not verified player paths.",
             "- `player_tracks.csv` contains experimental slot labels such as `<team>_slot_1`; these are not confirmed player identities.",
             "- Event outputs are empty until a real external kill/death event CSV is supplied.",
-            "- The current coordinate system is source-video pixels, not a normalized stage-map homography.",
+            stage_limit_line,
             "",
             "## Embedded Preview",
             "",
@@ -406,7 +481,15 @@ def main() -> int:
             print(f"- {path}")
     if not args.only_report:
         run_pipeline(args, config, resolved_config_path)
-    report_path = write_report(config, command_hint)
+    stage_normalization = run_stage_normalization(config)
+    if stage_normalization.get("status") == "ready":
+        print(
+            f"stage normalization: {stage_normalization['method']} -> {stage_normalization['output']} "
+            f"({stage_normalization['normalized_rows']} rows)"
+        )
+    else:
+        print(f"stage normalization: {stage_normalization.get('status', 'no_asset')}")
+    report_path = write_report(config, command_hint, stage_normalization=stage_normalization)
     manifest_path = write_run_manifest(
         config,
         args,
@@ -416,6 +499,7 @@ def main() -> int:
         report_path=report_path,
         command_hint=command_hint,
         cleaned_paths=cleaned_paths,
+        stage_normalization=stage_normalization,
     )
     print(f"\nreport: {report_path}")
     print(f"manifest: {manifest_path}")

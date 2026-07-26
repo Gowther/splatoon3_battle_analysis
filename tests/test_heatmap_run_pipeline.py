@@ -6,7 +6,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.heatmap.run_pipeline import clean_generated_outputs, configured_output_paths, write_run_manifest
+from src.heatmap.run_pipeline import (
+    clean_generated_outputs,
+    configured_output_paths,
+    run_stage_normalization,
+    write_run_manifest,
+)
+from src.heatmap.stage_coordinates import discover_control_point_asset
 
 
 class HeatmapRunPipelineTests(unittest.TestCase):
@@ -88,6 +94,159 @@ class HeatmapRunPipelineTests(unittest.TestCase):
         self.assertEqual(payload["match_id"], "sample")
         self.assertTrue(payload["options"]["clean_output"])
         self.assertEqual(payload["cleaned_paths"], ["outputs/old.csv"])
+        self.assertEqual(payload["stage_normalization"]["status"], "no_asset")
+
+    def test_configured_output_paths_include_stage_tracks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "heatmap"
+            config = {"match": {"output_dir": str(output_dir)}, "outputs": {}, "state_join": {}}
+
+            paths = {path.name for path in configured_output_paths(config)}
+
+        self.assertIn("player_tracks_stage.csv", paths)
+
+    def test_run_stage_normalization_without_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "heatmap"
+            config = {
+                "match": {"id": "no_asset_match", "output_dir": str(output_dir)},
+                "outputs": {"player_tracks_csv": str(output_dir / "player_tracks.csv")},
+                "map_view": {"roi": {"x1": 0, "y1": 0, "x2": 100, "y2": 100}},
+            }
+
+            result = run_stage_normalization(config)
+
+        self.assertEqual(result["status"], "no_asset")
+
+    def test_run_stage_normalization_with_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "heatmap"
+            output_dir.mkdir(parents=True)
+            tracks_csv = output_dir / "player_tracks.csv"
+            tracks_csv.write_text("x,y\n50,50\n25,75\n", encoding="utf-8")
+            asset_path = root / "assets" / "stage_x.json"
+            asset_path.parent.mkdir(parents=True)
+            asset_path.write_text(
+                json.dumps(
+                    {
+                        "stage_id": "stage_x",
+                        "template": False,
+                        "control_points": [
+                            {"source": [0, 0], "target": [0.0, 0.0]},
+                            {"source": [100, 0], "target": [1.0, 0.0]},
+                            {"source": [100, 100], "target": [1.0, 1.0]},
+                            {"source": [0, 100], "target": [0.0, 1.0]},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = {
+                "match": {"id": "with_asset_match", "output_dir": str(output_dir)},
+                "outputs": {"player_tracks_csv": str(tracks_csv)},
+                "map_view": {"coordinate_space": "video_pixels", "roi": {"x1": 0, "y1": 0, "x2": 100, "y2": 100}},
+                "stage_coordinates": {"control_point_asset": str(asset_path)},
+            }
+
+            result = run_stage_normalization(config)
+            stage_csv = output_dir / "player_tracks_stage.csv"
+
+            self.assertEqual(result["status"], "ready")
+            self.assertEqual(result["method"], "homography")
+            self.assertEqual(result["normalized_rows"], 2)
+            self.assertTrue(stage_csv.exists())
+            header = stage_csv.read_text(encoding="utf-8").splitlines()[0]
+            self.assertIn("stage_x", header)
+            self.assertIn("stage_inside_roi", header)
+
+    def test_run_stage_normalization_ignores_template_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "heatmap"
+            output_dir.mkdir(parents=True)
+            (output_dir / "player_tracks.csv").write_text("x,y\n50,50\n", encoding="utf-8")
+            asset_path = root / "template.json"
+            asset_path.write_text(
+                json.dumps(
+                    {
+                        "stage_id": "stage_x",
+                        "template": True,
+                        "control_points": [
+                            {"source": [0, 0], "target": [0.0, 0.0]},
+                            {"source": [100, 0], "target": [1.0, 0.0]},
+                            {"source": [100, 100], "target": [1.0, 1.0]},
+                            {"source": [0, 100], "target": [0.0, 1.0]},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = {
+                "match": {"id": "template_match", "output_dir": str(output_dir)},
+                "outputs": {"player_tracks_csv": str(output_dir / "player_tracks.csv")},
+                "map_view": {"roi": {"x1": 0, "y1": 0, "x2": 100, "y2": 100}},
+                "stage_coordinates": {"control_point_asset": str(asset_path)},
+            }
+
+            result = run_stage_normalization(config)
+
+        self.assertEqual(result["status"], "no_asset")
+
+
+class DiscoverControlPointAssetTests(unittest.TestCase):
+    def make_asset(self, path: Path, stage_id: str, *, template: bool = False) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "stage_id": stage_id,
+                    "template": template,
+                    "control_points": [
+                        {"source": [0, 0], "target": [0.0, 0.0]},
+                        {"source": [10, 0], "target": [1.0, 0.0]},
+                        {"source": [10, 10], "target": [1.0, 1.0]},
+                        {"source": [0, 10], "target": [0.0, 1.0]},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_finds_asset_by_match_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            asset_dir = Path(tmp) / "assets"
+            self.make_asset(asset_dir / "match_7.json", "match_7")
+
+            asset = discover_control_point_asset({"match": {"id": "match_7"}}, asset_dir=asset_dir)
+
+        self.assertIsNotNone(asset)
+        self.assertEqual(asset["stage_id"], "match_7")
+
+    def test_explicit_asset_path_wins(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_asset(root / "assets" / "match_7.json", "by_match_id")
+            explicit = root / "explicit.json"
+            self.make_asset(explicit, "explicit_stage")
+
+            asset = discover_control_point_asset(
+                {
+                    "match": {"id": "match_7"},
+                    "stage_coordinates": {"control_point_asset": str(explicit)},
+                },
+                asset_dir=root / "assets",
+            )
+
+        self.assertEqual(asset["stage_id"], "explicit_stage")
+
+    def test_returns_none_for_missing_or_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            asset_dir = Path(tmp) / "assets"
+            self.make_asset(asset_dir / "match_8.json", "match_8", template=True)
+
+            self.assertIsNone(discover_control_point_asset({"match": {"id": "match_8"}}, asset_dir=asset_dir))
+            self.assertIsNone(discover_control_point_asset({"match": {"id": "match_9"}}, asset_dir=asset_dir))
 
 
 if __name__ == "__main__":

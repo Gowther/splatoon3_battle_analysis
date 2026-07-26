@@ -155,6 +155,53 @@ def merge_control_point_asset(config: Mapping[str, Any], asset: Mapping[str, Any
     return output
 
 
+DEFAULT_CONTROL_POINT_ASSET_DIR = "config/stage_control_points"
+
+
+def discover_control_point_asset(
+    config: Mapping[str, Any],
+    *,
+    asset_dir: Path | str = DEFAULT_CONTROL_POINT_ASSET_DIR,
+) -> dict[str, Any] | None:
+    """Find a promoted control-point asset for this config.
+
+    Checked in order: an explicit stage_coordinates.control_point_asset path,
+    then <match_id>.json and <stage_id>.json under the asset directory.
+    Template assets are ignored.
+    """
+    stage_coordinates = config.get("stage_coordinates", {}) if isinstance(config, Mapping) else {}
+    map_view = config.get("map_view", {}) if isinstance(config, Mapping) else {}
+    match = config.get("match", {}) if isinstance(config, Mapping) else {}
+    resolved_dir = resolve_project_path(asset_dir) or Path(asset_dir)
+
+    candidates: list[Path] = []
+    explicit = stage_coordinates.get("control_point_asset", "") if isinstance(stage_coordinates, Mapping) else ""
+    if explicit:
+        resolved = resolve_project_path(explicit)
+        if resolved is not None:
+            candidates.append(resolved)
+    for key_source in (match, stage_coordinates, map_view):
+        if not isinstance(key_source, Mapping):
+            continue
+        identifier = str(key_source.get("id", "") or key_source.get("stage_id", "")).strip()
+        if identifier:
+            candidates.append(resolved_dir / f"{identifier}.json")
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen or not candidate.is_file():
+            continue
+        seen.add(candidate)
+        try:
+            asset = load_control_point_asset(candidate)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if asset.get("template"):
+            continue
+        return asset
+    return None
+
+
 def control_point_summary(control_points: list[dict[str, Any]], source_box: StageBox | None = None) -> dict[str, Any]:
     target_out_of_bounds: list[int] = []
     source_out_of_roi: list[int] = []

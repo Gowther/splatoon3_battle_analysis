@@ -1,6 +1,6 @@
 # Stage Coordinate Normalization
 
-这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-3：homography 已能真正生效，有了参考帧包，Web 工作台也有了点选标注入口。
+这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-4：homography 已能真正生效，有参考帧包和 Web 点选标注入口，管线在检测到正式资产时会自动产出 stage 坐标。
 
 ## 为什么需要这一层
 
@@ -176,6 +176,39 @@ Web 标注入口（点选自动写坐标）和 Goal 5 的跨帧稳定性评估�
 Goal 3 之后仍未解决：target 坐标还是手填数字，需要标准场地图底图对照
 （Goal 7 的标准渲染可以反哺这里）；单帧标注无法发现镜头移动，
 留给 Goal 5 的跨帧稳定性评估。
+
+## Goal 4: 管线自动产出 stage 坐标
+
+`src.heatmap.run_pipeline` 现在会在每次运行结束时自动寻找已提升的
+控制点资产：
+
+1. 优先用配置里显式声明的 `stage_coordinates.control_point_asset`。
+2. 否则按 `config/stage_control_points/<match_id>.json` 和
+   `<stage_id>.json` 查找。
+3. 模板资产（`template: true`）会被忽略，不会静默启用。
+
+找到资产时，管线把 `player_tracks.csv` 归一化为：
+
+```text
+outputs/<heatmap>/player_tracks_stage.csv
+```
+
+并且：
+
+- `report.md` 增加 `Stage Normalization` 小节，展示方法、资产路径、
+  行数和重投影最大误差；启用 homography 后，
+  “坐标还是源视频像素”的已知限制行会替换成提醒复核地标的版本。
+- `run_manifest.json` 增加 `stage_normalization` 字段和
+  `stage_tracks` 产物项。
+- `--clean-output` 会一并清掉 `player_tracks_stage.csv`。
+- 没有资产时行为完全不变，只在输出里注明 `no_asset`。
+
+也就是说：在 `/stage-labeling` 页面提升资产之后，重跑管线（或
+`--only-report`）就能直接拿到 stage 坐标产物，不需要再手动跑
+`report_stage_coordinates.py`。
+
+Goal 4 之后仍未解决：stage 坐标只覆盖 `player_tracks.csv`，
+enriched/team points 的归一化和标准场地渲染留给 Goal 7。
 
 ## 相关文件
 
