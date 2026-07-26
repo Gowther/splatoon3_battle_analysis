@@ -49,6 +49,7 @@ Use these entrypoints for active development:
 | `python scripts/write_experiment_manifest.py` | Write source/artifact hashes and verification into an experiment manifest. |
 | `python scripts/report_heatmap_productization.py` | Report heatmap productization readiness and milestones. |
 | `python scripts/report_change_package.py` | Summarize the current worktree into review/commit batches. |
+| `python scripts/report_outputs_retention.py` | Report and optionally reclaim regenerable space under `outputs/`. |
 
 Files outside this list are not routine development entrypoints. Historical
 scripts, old date-stamped root scripts, notebooks, realtime experiments, old
@@ -213,6 +214,7 @@ python scripts/report_runtime_benchmarks.py --output outputs/runtime/runtime_ben
 python scripts/write_experiment_manifest.py --experiment-id local_refactor_baseline --artifact baseline=outputs/model_benchmarks/baseline_snapshot.json
 python scripts/report_heatmap_productization.py --output outputs/heatmap_productization.md --json-output outputs/heatmap_productization.json
 python scripts/report_change_package.py --verification "python -m unittest discover -s tests -q"
+python scripts/report_outputs_retention.py --output outputs/outputs_retention.md --json-output outputs/outputs_retention.json
 python scripts/plan_weapon_training.py
 python scripts/train_weapon_classifier.py --dry-run --max-samples-per-class 1 --epochs 1
 python scripts/generate_weapon_dataset.py --dry-run --images-per-class 1

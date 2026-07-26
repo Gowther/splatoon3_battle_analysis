@@ -39,6 +39,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/yolov5_vendor.py` | Supported | YOLOv5 vendor boundary and local runtime readiness checks. |
 | `src/dataset_governance.py` | Supported | Dataset, label, and registry metadata governance reporting. |
 | `src/project_hygiene.py` | Supported | Root-layout, output, cache, and legacy-boundary hygiene reporting. |
+| `src/outputs_retention.py` | Supported | Regenerable-vs-deliverable classification and reclaim planning for `outputs/`. |
 | `src/runtime_report.py` | Supported | Small JSON/Markdown runtime report helpers for timed commands. |
 | `src/runtime_benchmarks.py` | Supported | Runtime report aggregation for benchmark baselines. |
 | `src/report_io.py` | Supported | Shared Markdown/JSON report writing and strict status exit helpers for report CLIs. |
@@ -70,6 +71,21 @@ generated artifacts outside `outputs/`:
 ```bash
 .venv/bin/python scripts/report_project_hygiene.py --output outputs/project_hygiene.md --json-output outputs/project_hygiene.json
 ```
+
+`outputs/` grows without bound because every heatmap run writes extracted
+frames and marker debug images. Check what can be reclaimed with:
+
+```bash
+.venv/bin/python scripts/report_outputs_retention.py --output outputs/outputs_retention.md
+```
+
+The report is a dry run by default. `frames/`, `debug_markers/`,
+`cleaning_debug/`, and `probes/` are treated as regenerable, while
+`rendered/`, `player_routes/`, `run_manifest.json`, and `report.md` are
+protected. Directories still referenced by an unfinished
+`annotation_template.csv` are held back so an in-progress annotation round is
+never stranded. Add `--apply` only when you accept re-running the pipeline to
+rebuild those intermediates.
 
 ## Legacy References
 
