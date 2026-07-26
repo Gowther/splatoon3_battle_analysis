@@ -159,6 +159,37 @@ def quality_report_for_asset(package_dir: Path, asset: Mapping[str, Any]) -> dic
         return {"status": "not_available", "reason": str(exc)}
 
 
+def check_stage_labels(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate the points in the editor without writing the draft.
+
+    Target coordinates are guessed by eye, so the reviewer needs to see the
+    geometry gates (coverage, corner sanity) react as they place points, before
+    committing anything to disk. This runs the same checks as save/promote but
+    persists nothing.
+    """
+    package_value = str(payload.get("package_dir", "")).strip()
+    if not package_value:
+        raise ValueError("package_dir is required")
+    package_dir = safe_project_file(package_value)
+    manifest = load_manifest(package_dir)
+    if manifest is None:
+        raise ValueError(f"not a stage reference package: {package_value}")
+
+    stage_id = str(payload.get("stage_id", "") or manifest.get("stage_id", package_dir.name)).strip()
+    points = normalize_labeled_points(payload.get("points"))
+    keep_template = len(points) < MIN_CONTROL_POINTS
+
+    asset = build_control_point_asset(stage_id, points, template=keep_template)
+    return {
+        "checked": True,
+        "stage_id": stage_id,
+        "template": keep_template,
+        "control_point_count": len(points),
+        "validation": validate_control_point_asset(asset),
+        "quality": quality_report_for_asset(package_dir, asset),
+    }
+
+
 def save_stage_labels(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Save labeled control points into the package draft and validate them."""
     package_value = str(payload.get("package_dir", "")).strip()

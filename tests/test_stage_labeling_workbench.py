@@ -9,6 +9,7 @@ from src.heatmap.stage_coordinates import StageBox
 from src.heatmap.stage_reference import build_draft_asset
 from src.stage_labeling_workbench import (
     build_stage_labeling_state,
+    check_stage_labels,
     describe_package,
     normalize_labeled_points,
     promote_stage_labels,
@@ -179,6 +180,30 @@ class StageLabelingWorkbenchTests(unittest.TestCase):
         self.assertFalse(promotion["promoted"])
         self.assertFalse(self.promoted.exists())
         self.assertIn("coverage", promotion["blocked_by"])
+
+    def test_check_validates_without_writing_draft(self) -> None:
+        # The check endpoint lets a reviewer see the geometry gates react as
+        # they place points, before committing anything. It must run the same
+        # checks as save but leave the draft untouched.
+        draft_path = self.package_dir / "control_points_draft.json"
+        before = draft_path.read_text(encoding="utf-8")
+
+        result = check_stage_labels(
+            {"package_dir": str(self.package_dir), "stage_id": "stage_a", "points": clustered_points()}
+        )
+
+        self.assertTrue(result["checked"])
+        self.assertEqual(result["validation"]["status"], "ready")
+        self.assertEqual(result["quality"]["status"], "needs_review")
+        # Draft on disk is unchanged: the check persisted nothing.
+        self.assertEqual(draft_path.read_text(encoding="utf-8"), before)
+
+    def test_check_reports_ready_geometry_for_good_points(self) -> None:
+        result = check_stage_labels(
+            {"package_dir": str(self.package_dir), "stage_id": "stage_a", "points": square_points()}
+        )
+
+        self.assertEqual(result["quality"]["status"], "ready")
 
 
 if __name__ == "__main__":

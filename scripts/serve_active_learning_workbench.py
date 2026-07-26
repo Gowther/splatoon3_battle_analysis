@@ -51,6 +51,7 @@ from src.evidence_review_workbench import (
 )
 from src.stage_labeling_workbench import (
     build_stage_labeling_state,
+    check_stage_labels,
     promote_stage_labels,
     save_stage_labels,
 )
@@ -2458,6 +2459,7 @@ const frameImage = document.getElementById("frame-image");
 const markerLayer = document.getElementById("marker-layer");
 const pointsTable = document.getElementById("points-table");
 const pointsBody = document.getElementById("points-body");
+const checkBtn = document.getElementById("check-btn");
 const saveBtn = document.getElementById("save-btn");
 const promoteBtn = document.getElementById("promote-btn");
 const validationStatus = document.getElementById("validation-status");
@@ -2549,6 +2551,7 @@ function renderPoints() {
     pointsBody.appendChild(row);
   });
   saveBtn.disabled = !activePackage || points.length < state.min_control_points;
+  checkBtn.disabled = !activePackage || points.length < state.min_control_points;
   renderMarkers();
 }
 
@@ -2559,6 +2562,7 @@ pointsBody.addEventListener("input", event => {
   points[index][field] = field === "name" ? event.target.value : Number(event.target.value);
   if (field !== "name") { renderMarkers(); }
   saveBtn.disabled = !activePackage || points.length < state.min_control_points;
+  checkBtn.disabled = !activePackage || points.length < state.min_control_points;
 });
 
 pointsBody.addEventListener("click", event => {
@@ -2599,6 +2603,23 @@ function showValidation(validation, quality) {
   validationDetail.textContent = JSON.stringify({ validation, quality }, null, 2);
   promoteBtn.disabled = !ready;
 }
+
+checkBtn.addEventListener("click", async () => {
+  try {
+    const result = await jsonFetch("/api/stage-labeling/check", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ package_dir: activePackage.package_dir, stage_id: activePackage.stage_id, points }),
+    });
+    // A check never writes and never promotes, so keep the promote button gated
+    // on a real save; showValidation only reflects whether the geometry is sound.
+    showValidation(result.validation, result.quality);
+    promoteBtn.disabled = true;
+    pageStatus.textContent = "已检查（未保存）";
+  } catch (error) {
+    pageStatus.textContent = String(error);
+  }
+});
 
 saveBtn.addEventListener("click", async () => {
   try {
@@ -2825,6 +2846,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self.send_json(record_evidence_review(payload))
             elif parsed.path == "/api/evidence-review/weapon-correction":
                 self.send_json(record_weapon_correction(payload))
+            elif parsed.path == "/api/stage-labeling/check":
+                self.send_json(check_stage_labels(payload))
             elif parsed.path == "/api/stage-labeling/save":
                 self.send_json(save_stage_labels(payload))
             elif parsed.path == "/api/stage-labeling/promote":
