@@ -1,6 +1,6 @@
 # Stage Coordinate Normalization
 
-这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-4：homography 已能真正生效，有参考帧包和 Web 点选标注入口，管线在检测到正式资产时会自动产出 stage 坐标。
+这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-5：homography 已能真正生效，有参考帧包、Web 点选标注、管线自动产出，以及控制点几何质量门禁。
 
 ## 为什么需要这一层
 
@@ -210,14 +210,56 @@ outputs/<heatmap>/player_tracks_stage.csv
 Goal 4 之后仍未解决：stage 坐标只覆盖 `player_tracks.csv`，
 enriched/team points 的归一化和标准场地渲染留给 Goal 7。
 
+## Goal 5: 控制点质量门禁
+
+Goal 1 的重投影自检有一个盲区：**它只检查控制点自己**。
+
+如果 4 个地标全都挤在画面一角，拟合出的矩阵会把这 4 个点映射得完美无缺
+（实测重投影误差 2e-16），但把 ROI 其余部分映射到场地之外。实测同一份
+聚集控制点，ROI 右上角被映射到 stage `(17.4, -1.5)`。
+
+Goal 5 增加三个重投影看不见的检查：
+
+```bash
+.venv/bin/python scripts/report_stage_control_point_quality.py \
+  --config src/heatmap/config_match9.yaml \
+  --strict
+```
+
+| 检查 | 含义 | 默认阈值 |
+| --- | --- | --- |
+| `reprojection` | 控制点自身的回代误差（Goal 1） | `<= 0.02` |
+| `coverage` | 控制点凸包占地图 ROI 的面积比 | `>= 0.15` |
+| `corners` | ROI 四角经 homography 后偏离 0..1 场地框的距离 | `<= 0.35` |
+| `frame_drift` | 同名地标在多个参考帧之间的像素漂移 | `<= 12px` |
+
+不传 `--control-points` 时，会自动复用 Goal 4 的资产发现逻辑。
+
+`--labeled-frames` 接受一个 `{帧号: [控制点...]}` 的 JSON，用于跨帧稳定性：
+同一个地标在不同时间点的标注如果漂移过大，说明镜头发生了缩放或平移，
+单一 homography 不再成立。没有共享地标时该项为 `not_available`，不算失败。
+
+实测对照：
+
+- 铺满 ROI 的 4 个角点：全部通过，`coverage=1.000`，角点偏移 `<1e-6`。
+- 挤在一角的 4 个点：重投影仍然 `ready`，但 `coverage=0.0096`、
+  角点偏移 `16.43`，报告判为 `needs_review`，`--strict` 退出码 1。
+- 镜头移动的跨帧标注：漂移 `52.02px`，判为 `unstable`。
+
+Goal 5 之后仍未解决：这些都是几何自洽性检查，无法判断地标是否真的对准了
+官方地图上的那个位置——填错但几何合理的点仍然只能靠人复查，
+需要 Goal 6 的 stage 注册表跨场次交叉验证。
+
 ## 相关文件
 
 | 路径 | 作用 |
 | --- | --- |
 | `src/heatmap/stage_coordinates.py` | ROI 归一化、控制点解析、homography 求解与重投影自检。 |
 | `src/heatmap/stage_reference.py` | 网格参考帧导出、控制点草稿与填写说明生成。 |
+| `src/heatmap/stage_quality.py` | 控制点覆盖度、角点合理性与跨帧稳定性评估。 |
 | `src/stage_labeling_workbench.py` | Web 场地标注页面的包发现、草稿保存校验与资产提升。 |
 | `scripts/build_stage_control_points.py` | 生成和校验控制点资产。 |
+| `scripts/report_stage_control_point_quality.py` | 控制点几何质量门禁报告。 |
 | `scripts/export_stage_reference.py` | 导出地标标注用的参考帧包。 |
 | `scripts/report_stage_coordinates.py` | 报告归一化状态并导出 `stage_x/stage_y`。 |
 | `config/stage_control_points.template.json` | 控制点模板。 |

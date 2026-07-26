@@ -25,6 +25,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/heatmap/productization.py` | Supported | Productization readiness and milestone reporting for heatmap outputs. |
 | `src/heatmap/stage_coordinates.py` | Supported | ROI-to-stage normalized coordinate helpers, control-point assets, and homography reprojection checks for heatmap points and tracks. |
 | `src/heatmap/stage_reference.py` | Supported | Grid-annotated reference frame export and control-point draft packages for stage landmark labeling. |
+| `src/heatmap/stage_quality.py` | Supported | Control-point coverage, ROI corner sanity, and cross-frame drift gates for stage homography. |
 | `src/data_review_workbench.py` | Supported | Analysis-source discovery and video/CSV time-aligned snapshots for the data review page. |
 | `src/evidence_review_workbench.py` | Supported | Weapon/death frame evidence export, weapon slot crops, and reviewer verdict logging. |
 | `src/stage_labeling_workbench.py` | Supported | Stage reference package discovery, control-point draft save/validate, and asset promotion for the web labeling page. |
