@@ -24,6 +24,8 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/heatmap/parameter_experiments.py` | Supported | Heatmap tracker parameter experiment planning and candidate config generation. |
 | `src/heatmap/productization.py` | Supported | Productization readiness and milestone reporting for heatmap outputs. |
 | `src/heatmap/stage_coordinates.py` | Supported | ROI-to-stage normalized coordinate helpers for heatmap points and tracks. |
+| `src/data_review_workbench.py` | Supported | Analysis-source discovery and video/CSV time-aligned snapshots for the data review page. |
+| `src/evidence_review_workbench.py` | Supported | Weapon/death frame evidence export, weapon slot crops, and reviewer verdict logging. |
 | `src/data_registry.py` | Supported | Data registry path resolution and validation support. |
 | `src/match_intake.py` | Supported | New match registry/evaluation intake planning and safe JSON updates. |
 | `src/model_quality.py` | Supported | Aggregated registry/evaluation/weapon/assets quality overview. |
