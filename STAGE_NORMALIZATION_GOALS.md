@@ -1,6 +1,6 @@
 # Stage Coordinate Normalization
 
-这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-2：homography 已能真正生效，并且有了给人工填地标用的参考帧包。
+这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-3：homography 已能真正生效，有了参考帧包，Web 工作台也有了点选标注入口。
 
 ## 为什么需要这一层
 
@@ -142,12 +142,48 @@ Goal 2 新增命令：
 Goal 2 之后仍未解决：地标填错但不共线时只能靠人复查；这依赖 Goal 3 的
 Web 标注入口（点选自动写坐标）和 Goal 5 的跨帧稳定性评估。
 
+## Goal 3: Web 点选标注
+
+工作台新增「场地标注」页面：
+
+```bash
+.venv/bin/python scripts/serve_active_learning_workbench.py --port 8765
+# 打开 http://127.0.0.1:8765/stage-labeling
+```
+
+流程：
+
+1. 左侧列出 `outputs/stage_reference/` 下的所有参考帧包。
+2. 选包后展示网格参考帧，可切换 `--times` 导出的多个时间点。
+3. 在图上点击即写入 `source_x/source_y`（自动换算回原图像素），
+   再在表格里填 `stage_x/stage_y` 目标坐标和地标名称。
+4. 「保存草稿并校验」把点写回 `control_points_draft.json` 并立即返回
+   Goal 1 的完整校验结果（含重投影误差）。少于 4 个点会保持
+   `template: true`，不可能提前启用 homography。
+5. 校验通过后「提升为正式资产」把草稿复制到
+   `config/stage_control_points/<stage_id>.json`，并给出下一步
+   `report_stage_coordinates.py` 命令。提升前会再校验一次，
+   未通过的草稿会被拒绝。
+
+相关 API：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/stage-labeling/state` | 参考帧包列表和草稿状态。 |
+| POST | `/api/stage-labeling/save` | 保存点选结果并校验。 |
+| POST | `/api/stage-labeling/promote` | 校验通过后提升为正式资产。 |
+
+Goal 3 之后仍未解决：target 坐标还是手填数字，需要标准场地图底图对照
+（Goal 7 的标准渲染可以反哺这里）；单帧标注无法发现镜头移动，
+留给 Goal 5 的跨帧稳定性评估。
+
 ## 相关文件
 
 | 路径 | 作用 |
 | --- | --- |
 | `src/heatmap/stage_coordinates.py` | ROI 归一化、控制点解析、homography 求解与重投影自检。 |
 | `src/heatmap/stage_reference.py` | 网格参考帧导出、控制点草稿与填写说明生成。 |
+| `src/stage_labeling_workbench.py` | Web 场地标注页面的包发现、草稿保存校验与资产提升。 |
 | `scripts/build_stage_control_points.py` | 生成和校验控制点资产。 |
 | `scripts/export_stage_reference.py` | 导出地标标注用的参考帧包。 |
 | `scripts/report_stage_coordinates.py` | 报告归一化状态并导出 `stage_x/stage_y`。 |

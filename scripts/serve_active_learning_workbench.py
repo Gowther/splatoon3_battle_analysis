@@ -48,6 +48,11 @@ from src.evidence_review_workbench import (
     record_evidence_review,
     record_weapon_correction,
 )
+from src.stage_labeling_workbench import (
+    build_stage_labeling_state,
+    promote_stage_labels,
+    save_stage_labels,
+)
 
 
 APP_HTML = """<!doctype html>
@@ -205,6 +210,7 @@ APP_HTML = """<!doctype html>
   <button id="refreshButton" data-i18n="button.refresh">刷新</button>
   <a class="nav-link" href="/data-review">数据核验</a>
   <a class="nav-link" href="/evidence-review">证据核验</a>
+  <a class="nav-link" href="/stage-labeling">场地标注</a>
   <select id="languageSelect" aria-label="Language">
     <option value="zh-CN">中文</option>
     <option value="en">English</option>
@@ -1105,6 +1111,7 @@ DATA_REVIEW_HTML = """<!doctype html>
   <span id="pageStatus" class="status">加载中</span>
   <a class="nav-link" href="/">主动学习</a>
   <a class="nav-link" href="/evidence-review">证据核验</a>
+  <a class="nav-link" href="/stage-labeling">场地标注</a>
   <button id="refreshButton">刷新</button>
   <span id="saveStatus" class="muted"></span>
 </header>
@@ -1766,6 +1773,7 @@ EVIDENCE_REVIEW_HTML = """<!doctype html>
   <span id="pageStatus" class="status">加载中</span>
   <a class="nav-link" href="/">主动学习</a>
   <a class="nav-link" href="/data-review">时间同步核验</a>
+  <a class="nav-link" href="/stage-labeling">场地标注</a>
   <span id="saveStatus" class="muted"></span>
 </header>
 <main>
@@ -2265,6 +2273,293 @@ loadState().catch(error => {
 """
 
 
+STAGE_LABELING_HTML = """<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>场地控制点标注</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7f8;
+      --surface: #ffffff;
+      --ink: #172026;
+      --muted: #687782;
+      --line: #d8e0e5;
+      --accent: #0f766e;
+      --good: #13795b;
+      --warn: #a16207;
+      --bad: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }
+    header { height: 54px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+    h1 { margin: 0; font-size: 17px; font-weight: 700; }
+    h2 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
+    button, input, select { font: inherit; }
+    button, a.nav-link { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 6px; padding: 7px 10px; text-decoration: none; cursor: pointer; }
+    button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    main { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 12px; padding: 12px; }
+    aside, section { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .pkg { border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin-bottom: 8px; cursor: pointer; }
+    .pkg.active { border-color: var(--accent); background: #e8f6f3; }
+    .frame-wrap { position: relative; overflow: auto; border: 1px solid var(--line); border-radius: 6px; max-height: 62vh; background: #111; }
+    .frame-wrap img { display: block; width: 100%; height: auto; }
+    .marker { position: absolute; width: 14px; height: 14px; border: 2px solid #ff2d78; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 0 2px rgba(255,255,255,0.8); }
+    .marker span { position: absolute; left: 12px; top: -4px; color: #ff2d78; font-size: 11px; font-weight: 700; text-shadow: 0 0 3px #fff; white-space: nowrap; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; }
+    td input { width: 72px; border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px; }
+    td input.name { width: 130px; }
+    .row-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+    .status-good { color: var(--good); font-weight: 700; }
+    .status-bad { color: var(--bad); font-weight: 700; }
+    pre { background: #f2f5f7; border-radius: 6px; padding: 8px; font-size: 12px; overflow: auto; max-height: 180px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>场地控制点标注</h1>
+  <a class="nav-link" href="/">主动学习</a>
+  <a class="nav-link" href="/data-review">数据核验</a>
+  <a class="nav-link" href="/evidence-review">证据核验</a>
+  <span id="page-status" class="muted"></span>
+</header>
+<main>
+  <aside>
+    <h2>参考帧包</h2>
+    <p class="muted">来自 scripts/export_stage_reference.py 的输出。没有包时先运行该命令。</p>
+    <div id="package-list"></div>
+  </aside>
+  <section>
+    <h2 id="stage-title">选择左侧的参考帧包</h2>
+    <div class="row-actions">
+      <label>参考帧
+        <select id="frame-select"></select>
+      </label>
+      <span class="muted">在图上点击放置控制点；target 填标准场地图 0..1 坐标。</span>
+    </div>
+    <div class="frame-wrap" id="frame-wrap" hidden>
+      <img id="frame-image" alt="reference frame">
+      <div id="marker-layer"></div>
+    </div>
+    <table id="points-table" hidden>
+      <thead>
+        <tr><th>名称</th><th>source_x</th><th>source_y</th><th>stage_x</th><th>stage_y</th><th></th></tr>
+      </thead>
+      <tbody id="points-body"></tbody>
+    </table>
+    <div class="row-actions">
+      <button id="save-btn" class="primary" disabled>保存草稿并校验</button>
+      <button id="promote-btn" disabled>提升为正式资产</button>
+      <span id="validation-status"></span>
+    </div>
+    <pre id="validation-detail" hidden></pre>
+  </section>
+</main>
+<script>
+let state = null;
+let activePackage = null;
+let points = [];
+
+const pageStatus = document.getElementById("page-status");
+const packageList = document.getElementById("package-list");
+const stageTitle = document.getElementById("stage-title");
+const frameSelect = document.getElementById("frame-select");
+const frameWrap = document.getElementById("frame-wrap");
+const frameImage = document.getElementById("frame-image");
+const markerLayer = document.getElementById("marker-layer");
+const pointsTable = document.getElementById("points-table");
+const pointsBody = document.getElementById("points-body");
+const saveBtn = document.getElementById("save-btn");
+const promoteBtn = document.getElementById("promote-btn");
+const validationStatus = document.getElementById("validation-status");
+const validationDetail = document.getElementById("validation-detail");
+
+function imageUrl(path) { return "/api/image?path=" + encodeURIComponent(path || ""); }
+
+async function jsonFetch(url, options) {
+  const response = await fetch(url, options);
+  const payload = await response.json();
+  if (!response.ok) { throw new Error(payload.error || response.statusText); }
+  return payload;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[ch]));
+}
+
+function renderPackages() {
+  packageList.innerHTML = "";
+  for (const pkg of state.packages) {
+    const div = document.createElement("div");
+    div.className = "pkg" + (activePackage && activePackage.package_dir === pkg.package_dir ? " active" : "");
+    div.innerHTML = `<strong>${escapeHtml(pkg.stage_id)}</strong>` +
+      `<div class="muted">${escapeHtml(pkg.package_dir)}</div>` +
+      `<div class="muted">帧 ${pkg.frames.length} · 点 ${pkg.control_point_count}` +
+      `${pkg.draft_template ? " · 模板草稿" : " · 已编辑"}` +
+      `${pkg.promoted ? " · 已提升" : ""}</div>`;
+    div.addEventListener("click", () => selectPackage(pkg));
+    packageList.appendChild(div);
+  }
+  if (!state.packages.length) {
+    packageList.innerHTML = '<p class="muted">暂无参考帧包。</p>';
+  }
+}
+
+function selectPackage(pkg) {
+  activePackage = pkg;
+  points = (pkg.draft_template ? [] : pkg.control_points.map(cp => ({
+    name: cp.name || "",
+    source_x: cp.source ? cp.source[0] : cp.source_x,
+    source_y: cp.source ? cp.source[1] : cp.source_y,
+    stage_x: cp.target ? cp.target[0] : cp.stage_x,
+    stage_y: cp.target ? cp.target[1] : cp.stage_y,
+  })));
+  stageTitle.textContent = pkg.stage_id;
+  frameSelect.innerHTML = pkg.frames.map(frame =>
+    `<option value="${escapeHtml(frame.path)}">${frame.time}s</option>`).join("");
+  frameWrap.hidden = !pkg.frames.length;
+  pointsTable.hidden = false;
+  if (pkg.frames.length) { loadFrame(pkg.frames[0].path); }
+  renderPackages();
+  renderPoints();
+  validationStatus.textContent = "";
+  validationDetail.hidden = true;
+}
+
+function loadFrame(path) {
+  frameImage.src = imageUrl(path);
+  frameImage.onload = renderMarkers;
+}
+
+function renderMarkers() {
+  markerLayer.innerHTML = "";
+  if (!frameImage.naturalWidth) { return; }
+  const scaleX = frameImage.clientWidth / frameImage.naturalWidth;
+  const scaleY = frameImage.clientHeight / frameImage.naturalHeight;
+  points.forEach((point, index) => {
+    const marker = document.createElement("div");
+    marker.className = "marker";
+    marker.style.left = `${point.source_x * scaleX}px`;
+    marker.style.top = `${point.source_y * scaleY}px`;
+    marker.innerHTML = `<span>${index + 1} ${escapeHtml(point.name || "")}</span>`;
+    markerLayer.appendChild(marker);
+  });
+}
+
+function renderPoints() {
+  pointsBody.innerHTML = "";
+  points.forEach((point, index) => {
+    const row = document.createElement("tr");
+    row.innerHTML =
+      `<td><input class="name" data-field="name" data-index="${index}" value="${escapeHtml(point.name || "")}"></td>` +
+      `<td><input data-field="source_x" data-index="${index}" value="${point.source_x ?? ""}"></td>` +
+      `<td><input data-field="source_y" data-index="${index}" value="${point.source_y ?? ""}"></td>` +
+      `<td><input data-field="stage_x" data-index="${index}" value="${point.stage_x ?? ""}"></td>` +
+      `<td><input data-field="stage_y" data-index="${index}" value="${point.stage_y ?? ""}"></td>` +
+      `<td><button data-remove="${index}">删除</button></td>`;
+    pointsBody.appendChild(row);
+  });
+  saveBtn.disabled = !activePackage || points.length < state.min_control_points;
+  renderMarkers();
+}
+
+pointsBody.addEventListener("input", event => {
+  const field = event.target.dataset.field;
+  if (!field) { return; }
+  const index = Number(event.target.dataset.index);
+  points[index][field] = field === "name" ? event.target.value : Number(event.target.value);
+  if (field !== "name") { renderMarkers(); }
+  saveBtn.disabled = !activePackage || points.length < state.min_control_points;
+});
+
+pointsBody.addEventListener("click", event => {
+  const removeIndex = event.target.dataset.remove;
+  if (removeIndex === undefined) { return; }
+  points.splice(Number(removeIndex), 1);
+  renderPoints();
+});
+
+frameImage.addEventListener("click", event => {
+  if (!activePackage) { return; }
+  const rect = frameImage.getBoundingClientRect();
+  const x = (event.clientX - rect.left) * frameImage.naturalWidth / rect.width;
+  const y = (event.clientY - rect.top) * frameImage.naturalHeight / rect.height;
+  points.push({ name: `point_${points.length + 1}`, source_x: Math.round(x * 10) / 10, source_y: Math.round(y * 10) / 10, stage_x: "", stage_y: "" });
+  renderPoints();
+});
+
+frameSelect.addEventListener("change", () => loadFrame(frameSelect.value));
+window.addEventListener("resize", renderMarkers);
+
+function showValidation(validation) {
+  const ready = validation.status === "ready";
+  validationStatus.textContent = ready ? "校验通过" : "未通过";
+  validationStatus.className = ready ? "status-good" : "status-bad";
+  validationDetail.hidden = false;
+  validationDetail.textContent = JSON.stringify(validation, null, 2);
+  promoteBtn.disabled = !ready;
+}
+
+saveBtn.addEventListener("click", async () => {
+  try {
+    const result = await jsonFetch("/api/stage-labeling/save", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ package_dir: activePackage.package_dir, stage_id: activePackage.stage_id, points }),
+    });
+    showValidation(result.validation);
+    pageStatus.textContent = `已保存 ${result.draft_path}`;
+    await loadState(activePackage.package_dir);
+  } catch (error) {
+    pageStatus.textContent = String(error);
+  }
+});
+
+promoteBtn.addEventListener("click", async () => {
+  try {
+    const result = await jsonFetch("/api/stage-labeling/promote", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ package_dir: activePackage.package_dir }),
+    });
+    if (result.promoted) {
+      pageStatus.textContent = `已提升 ${result.asset_path}`;
+      await loadState(activePackage.package_dir);
+    } else {
+      showValidation(result.validation);
+    }
+  } catch (error) {
+    pageStatus.textContent = String(error);
+  }
+});
+
+async function loadState(keepPackageDir) {
+  state = await jsonFetch("/api/stage-labeling/state");
+  renderPackages();
+  if (keepPackageDir) {
+    const kept = state.packages.find(pkg => pkg.package_dir === keepPackageDir);
+    if (kept) {
+      const keepPoints = points;
+      selectPackage(kept);
+      if (keepPoints.length) { points = keepPoints; renderPoints(); }
+    }
+  }
+}
+
+loadState().catch(error => {
+  pageStatus.textContent = String(error);
+});
+</script>
+</body>
+</html>
+"""
+
+
 def run_background_job(job: dict, action_id: str, payload: dict) -> None:
     try:
         result = run_workbench_action(action_id, payload)
@@ -2365,8 +2660,12 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self.send_bytes(DATA_REVIEW_HTML.encode("utf-8"), content_type="text/html; charset=utf-8")
             elif parsed.path == "/evidence-review":
                 self.send_bytes(EVIDENCE_REVIEW_HTML.encode("utf-8"), content_type="text/html; charset=utf-8")
+            elif parsed.path == "/stage-labeling":
+                self.send_bytes(STAGE_LABELING_HTML.encode("utf-8"), content_type="text/html; charset=utf-8")
             elif parsed.path == "/api/state":
                 self.send_json(build_workbench_state())
+            elif parsed.path == "/api/stage-labeling/state":
+                self.send_json(build_stage_labeling_state())
             elif parsed.path == "/api/data-review/state":
                 self.send_json(build_data_review_state())
             elif parsed.path == "/api/data-review/snapshot":
@@ -2431,6 +2730,10 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self.send_json(record_evidence_review(payload))
             elif parsed.path == "/api/evidence-review/weapon-correction":
                 self.send_json(record_weapon_correction(payload))
+            elif parsed.path == "/api/stage-labeling/save":
+                self.send_json(save_stage_labels(payload))
+            elif parsed.path == "/api/stage-labeling/promote":
+                self.send_json(promote_stage_labels(payload))
             elif parsed.path == "/api/action":
                 self.send_json(run_workbench_action(str(payload.get("action_id", "")), payload.get("payload", {})))
             elif parsed.path == "/api/apply-staging":

@@ -27,6 +27,7 @@ commands, model paths, CSV schemas, and heatmap outputs stay the same.
 | `src/heatmap/stage_reference.py` | Supported | Grid-annotated reference frame export and control-point draft packages for stage landmark labeling. |
 | `src/data_review_workbench.py` | Supported | Analysis-source discovery and video/CSV time-aligned snapshots for the data review page. |
 | `src/evidence_review_workbench.py` | Supported | Weapon/death frame evidence export, weapon slot crops, and reviewer verdict logging. |
+| `src/stage_labeling_workbench.py` | Supported | Stage reference package discovery, control-point draft save/validate, and asset promotion for the web labeling page. |
 | `src/data_registry.py` | Supported | Data registry path resolution and validation support. |
 | `src/match_intake.py` | Supported | New match registry/evaluation intake planning and safe JSON updates. |
 | `src/model_quality.py` | Supported | Aggregated registry/evaluation/weapon/assets quality overview. |

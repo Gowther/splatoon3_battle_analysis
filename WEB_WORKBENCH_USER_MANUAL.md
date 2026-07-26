@@ -235,6 +235,7 @@ LLM 的建议只是辅助，不会自动写入训练集。最终仍需要人确�
 | --- | --- | --- |
 | 数据核验 | `/data-review` | 把视频时间轴和分析 CSV 对齐，确认某个时间点的数据行是否和画面一致。 |
 | 证据核验 | `/evidence-review` | 对武器识别和死亡事件导出画面证据，逐条判断对错，并修正武器标签。 |
+| 场地标注 | `/stage-labeling` | 在网格参考帧上点选场地控制点，校验 homography 后提升为正式资产。 |
 
 ### 数据核验
 
@@ -272,6 +273,26 @@ outputs/weapon_correction_dataset/corrections.jsonl
 
 武器修正裁图按标签分目录存放，可以直接作为武器分类器的补充训练数据。
 
+### 场地标注
+
+前置条件：先用 `scripts/export_stage_reference.py` 为一场对战导出参考帧包
+（见 `STAGE_NORMALIZATION_GOALS.md` Goal 2）。
+
+1. 左侧选择参考帧包，可切换多个时间点的网格帧。
+2. 在图上点击地标位置，源像素坐标自动写入表格。
+3. 在表格里补齐每个点的 `stage_x/stage_y`（标准场地图 0..1 坐标）和名称。
+4. 点「保存草稿并校验」：立即返回控制点校验和重投影误差。
+   少于 4 个点时草稿保持模板状态，不会启用 homography。
+5. 校验通过后点「提升为正式资产」，写入
+   `config/stage_control_points/<stage_id>.json`。
+
+输出位置：
+
+```text
+outputs/stage_reference/<stage_id>/control_points_draft.json
+config/stage_control_points/<stage_id>.json
+```
+
 ### 相关 API
 
 | 方法 | 路径 | 说明 |
@@ -283,8 +304,11 @@ outputs/weapon_correction_dataset/corrections.jsonl
 | GET | `/api/evidence-review/video` | 为指定视频导出武器/死亡证据。 |
 | POST | `/api/evidence-review/review` | 追加一条证据核验结论。 |
 | POST | `/api/evidence-review/weapon-correction` | 写入武器标签修正和槽位裁图。 |
+| GET | `/api/stage-labeling/state` | 参考帧包列表和草稿状态。 |
+| POST | `/api/stage-labeling/save` | 保存场地控制点草稿并校验。 |
+| POST | `/api/stage-labeling/promote` | 校验通过后提升为正式控制点资产。 |
 
-这两个页面只读取视频和已生成的 CSV，不会改动正式训练集，也不会替换模型。
+这三个页面只读取视频和已生成的 CSV/参考帧，不会改动正式训练集，也不会替换模型。场地标注的「提升」只写 `config/stage_control_points/`。
 
 ## 9. 常见问题
 
