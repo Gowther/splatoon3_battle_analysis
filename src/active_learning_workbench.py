@@ -1309,6 +1309,35 @@ def finish_job_record(job_id: str, result: dict[str, Any], path: Path = DEFAULT_
     return upsert_job_record(job, path)
 
 
+def reconcile_running_jobs(path: Path = DEFAULT_JOBS_PATH) -> int:
+    """Mark jobs still flagged ``running`` as interrupted.
+
+    Jobs run in daemon threads, so a server restart leaves any in-flight job
+    stranded at ``running`` forever. Call this once at startup: the threads are
+    gone, so anything still ``running`` in the file died with the old process.
+    Returns the number of records reconciled.
+    """
+    payload = load_jobs(path)
+    jobs = [item for item in payload.get("jobs", []) if isinstance(item, dict)]
+    reconciled = 0
+    for job in jobs:
+        if job.get("status") == "running":
+            job["status"] = "interrupted"
+            job["completed_at"] = utc_now()
+            result = job.get("result")
+            if not isinstance(result, dict):
+                result = {}
+            result["status"] = "interrupted"
+            result.setdefault("error", "server restarted while this job was running")
+            job["result"] = result
+            reconciled += 1
+    if reconciled:
+        payload["jobs"] = jobs
+        payload["updated_at"] = utc_now()
+        write_json(path, payload)
+    return reconciled
+
+
 ActionCommandBuilder = Callable[[dict[str, Any], str], list[str]]
 
 

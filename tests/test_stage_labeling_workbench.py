@@ -44,6 +44,18 @@ def square_points() -> list[dict]:
     ]
 
 
+def clustered_points() -> list[dict]:
+    # Four non-collinear points packed into the top-left corner of a 100x100
+    # ROI. The homography solves cleanly (near-zero reprojection error) but the
+    # points cover almost none of the map, so the geometry gates reject them.
+    return [
+        {"name": "a", "source_x": 0, "source_y": 0, "stage_x": 0.0, "stage_y": 0.0},
+        {"name": "b", "source_x": 8, "source_y": 0, "stage_x": 0.08, "stage_y": 0.0},
+        {"name": "c", "source_x": 8, "source_y": 8, "stage_x": 0.08, "stage_y": 0.08},
+        {"name": "d", "source_x": 0, "source_y": 8, "stage_x": 0.0, "stage_y": 0.08},
+    ]
+
+
 class StageLabelingWorkbenchTests(unittest.TestCase):
     def setUp(self) -> None:
         # safe_project_file only accepts paths inside the project, so fixtures
@@ -149,6 +161,24 @@ class StageLabelingWorkbenchTests(unittest.TestCase):
         self.assertEqual(promoted["stage_id"], "stage_a")
         self.assertFalse(promoted["template"])
         self.assertIn("report_stage_coordinates", result["next_step"])
+
+    def test_promote_blocked_by_geometry_gate(self) -> None:
+        # These four points are non-collinear, so the homography solves and
+        # reprojection is near-perfect — the basic validator passes them. But
+        # they sit clustered in one corner of the ROI, so the coverage and
+        # corner gates reject them. This is the exact case that slipped through
+        # the web promote path before the geometry gate was wired in.
+        result = save_stage_labels(
+            {"package_dir": str(self.package_dir), "stage_id": "stage_a", "points": clustered_points()}
+        )
+        self.assertEqual(result["validation"]["status"], "ready")
+        self.assertEqual(result["quality"]["status"], "needs_review")
+
+        promotion = promote_stage_labels({"package_dir": str(self.package_dir)})
+
+        self.assertFalse(promotion["promoted"])
+        self.assertFalse(self.promoted.exists())
+        self.assertIn("coverage", promotion["blocked_by"])
 
 
 if __name__ == "__main__":

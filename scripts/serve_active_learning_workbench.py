@@ -29,6 +29,7 @@ from src.active_learning_workbench import (
     load_staging,
     media_type_for_path,
     prefill_heatmap_staging,
+    reconcile_running_jobs,
     record_llm_review,
     run_automation_pipeline,
     run_workbench_action,
@@ -148,9 +149,9 @@ APP_HTML = """<!doctype html>
       color: var(--muted);
       font-size: 12px;
     }
-    .status.ready, .status.passed, .status.completed, .status.promoted { background: #e8f5ef; color: var(--good); }
-    .status.needs_attention, .status.needs_review, .status.needs_data, .status.needs_labels, .status.needs_human, .status.has_drafts { background: #fff5d7; color: var(--warn); }
-    .status.failed, .status.blocked, .status.timeout, .status.missing { background: #fdeceb; color: var(--bad); }
+    .status.ready, .status.passed, .status.completed, .status.promoted, .status.done { background: #e8f5ef; color: var(--good); }
+    .status.needs_attention, .status.needs_review, .status.needs_data, .status.needs_labels, .status.needs_human, .status.has_drafts, .status.running { background: #fff5d7; color: var(--warn); }
+    .status.failed, .status.blocked, .status.timeout, .status.missing, .status.interrupted { background: #fdeceb; color: var(--bad); }
     .muted { color: var(--muted); font-size: 12px; }
     .tiny { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -320,6 +321,10 @@ APP_HTML = """<!doctype html>
       <h2 data-i18n="section.asset_inbox">素材收件箱</h2>
       <div id="assetInbox" class="grid"></div>
     </section>
+    <section class="panel" style="padding:10px;">
+      <h2 data-i18n="section.jobs">后台任务</h2>
+      <div id="jobsList" class="grid"></div>
+    </section>
   </div>
 </main>
 <script>
@@ -335,6 +340,7 @@ const I18N = {
     "section.actions": "操作",
     "section.apply_staging": "应用暂存",
     "section.asset_inbox": "素材收件箱",
+    "section.jobs": "后台任务",
     "filter.all_status": "全部状态",
     "filter.all_targets": "全部目标",
     "candidate.empty": "未选择候选样本",
@@ -381,6 +387,7 @@ const I18N = {
     "confirm.training": "要开始训练这个目标吗？",
     "confirm.promotion": "要把候选模型应用到登记的正式模型路径吗？",
     "confirm.apply_staging": "要把已完成的暂存标注写入训练集吗？",
+    "confirm.automation": "自动推进会接入视频、写报告并推进流程，确认执行吗？",
     "status.loading": "加载中",
     "status.idle": "空闲",
     "status.missing": "缺失",
@@ -403,6 +410,9 @@ const I18N = {
     "status.skipped": "已跳过",
     "status.new": "新素材",
     "status.registered": "已登记",
+    "status.running": "运行中",
+    "status.interrupted": "已中断",
+    "jobs.empty": "暂无后台任务",
     "target.ui_detector_yolo": "UI 检测 YOLO",
     "target.count_ocr_yolo": "数字 OCR YOLO",
     "target.message_ocr_yolo": "消息 OCR YOLO",
@@ -418,6 +428,7 @@ const I18N = {
     "section.actions": "Actions",
     "section.apply_staging": "Apply Staging",
     "section.asset_inbox": "Asset Inbox",
+    "section.jobs": "Background Jobs",
     "filter.all_status": "all status",
     "filter.all_targets": "all targets",
     "candidate.empty": "No candidate selected",
@@ -464,6 +475,7 @@ const I18N = {
     "confirm.training": "Start training for this target?",
     "confirm.promotion": "Apply candidate model to the registered path?",
     "confirm.apply_staging": "Apply done staging annotations into training datasets?",
+    "confirm.automation": "Automation will intake videos, write reports and advance the pipeline. Run it?",
     "status.loading": "loading",
     "status.idle": "idle",
     "status.missing": "missing",
@@ -486,6 +498,9 @@ const I18N = {
     "status.skipped": "skipped",
     "status.new": "new",
     "status.registered": "registered",
+    "status.running": "running",
+    "status.interrupted": "interrupted",
+    "jobs.empty": "no background jobs yet",
     "target.ui_detector_yolo": "UI detector YOLO",
     "target.count_ocr_yolo": "count OCR YOLO",
     "target.message_ocr_yolo": "message OCR YOLO",
@@ -545,6 +560,7 @@ function render() {
   document.getElementById("updatedAt").textContent = state.app.updated_at || "";
   renderReports();
   renderInbox();
+  renderJobs();
   renderQueueFilters();
   renderQueue();
   drawCanvas();
@@ -567,6 +583,26 @@ function renderInbox() {
       <div class="tiny" style="margin-top:6px;">${escapeHtml(item.path)}</div>
       ${item.status === "new" ? `<button style="margin-top:8px;" onclick="prefillIntake('${escapeHtml(item.path)}','${escapeHtml(item.suggested_match_id)}')">${escapeHtml(t("button.use"))}</button>` : ""}
     </div>`).join("");
+}
+function renderJobs() {
+  const jobs = (state.app.recent_jobs || []).slice().reverse();
+  const root = document.getElementById("jobsList");
+  if (!jobs.length) {
+    root.innerHTML = `<div class="tiny">${escapeHtml(t("jobs.empty"))}</div>`;
+    return;
+  }
+  root.innerHTML = jobs.map(job => {
+    const label = language === "zh-CN" ? (job.label_zh || job.label || job.action_id) : (job.label || job.action_id);
+    const when = job.completed_at || job.started_at || job.created_at || "";
+    const error = job.result && job.result.error ? `<div class="tiny" style="margin-top:6px;">${escapeHtml(String(job.result.error))}</div>` : "";
+    return `
+    <div class="report">
+      <strong>${escapeHtml(String(label))}</strong>
+      <span class="${cls(job.status)}">${escapeHtml(statusLabel(job.status))}</span>
+      <div class="tiny" style="margin-top:6px;">${escapeHtml(when)}</div>
+      ${error}
+    </div>`;
+  }).join("");
 }
 function prefillIntake(path, matchId) {
   document.getElementById("videoInput").value = path;
@@ -809,6 +845,7 @@ document.getElementById("automationDryRun").onclick = async () => {
   await loadAll();
 };
 document.getElementById("automationRun").onclick = async () => {
+  if (!confirm(t("confirm.automation"))) return;
   const result = await postJson("/api/automation-run", { dry_run: false, include_long: false, max_steps: 8 });
   document.getElementById("actionOutput").textContent = JSON.stringify(result, null, 2);
   await loadAll();
@@ -2496,12 +2533,23 @@ frameImage.addEventListener("click", event => {
 frameSelect.addEventListener("change", () => loadFrame(frameSelect.value));
 window.addEventListener("resize", renderMarkers);
 
-function showValidation(validation) {
-  const ready = validation.status === "ready";
-  validationStatus.textContent = ready ? "校验通过" : "未通过";
+function showValidation(validation, quality) {
+  const basicOk = validation.status === "ready";
+  // Reprojection alone passes control points clustered in one corner. The
+  // geometry gates are what decide whether the asset is usable.
+  const qualityStatus = quality ? quality.status : "not_available";
+  const qualityOk = qualityStatus !== "needs_review" && qualityStatus !== "needs_control_points";
+  const ready = basicOk && qualityOk;
+
+  let text = ready ? "校验通过" : "未通过";
+  if (basicOk && !qualityOk && quality && quality.failed_checks && quality.failed_checks.length) {
+    const names = { coverage: "覆盖度", corners: "角点合理性", reprojection: "重投影", frame_drift: "跨帧稳定性" };
+    text = "几何检查未通过：" + quality.failed_checks.map(c => names[c] || c).join("、");
+  }
+  validationStatus.textContent = text;
   validationStatus.className = ready ? "status-good" : "status-bad";
   validationDetail.hidden = false;
-  validationDetail.textContent = JSON.stringify(validation, null, 2);
+  validationDetail.textContent = JSON.stringify({ validation, quality }, null, 2);
   promoteBtn.disabled = !ready;
 }
 
@@ -2512,7 +2560,7 @@ saveBtn.addEventListener("click", async () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ package_dir: activePackage.package_dir, stage_id: activePackage.stage_id, points }),
     });
-    showValidation(result.validation);
+    showValidation(result.validation, result.quality);
     pageStatus.textContent = `已保存 ${result.draft_path}`;
     await loadState(activePackage.package_dir);
   } catch (error) {
@@ -2531,7 +2579,7 @@ promoteBtn.addEventListener("click", async () => {
       pageStatus.textContent = `已提升 ${result.asset_path}`;
       await loadState(activePackage.package_dir);
     } else {
-      showValidation(result.validation);
+      showValidation(result.validation, result.quality);
     }
   } catch (error) {
     pageStatus.textContent = String(error);
@@ -2773,6 +2821,9 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
 
 def main() -> int:
     args = parse_args()
+    interrupted = reconcile_running_jobs()
+    if interrupted:
+        print(f"reconciled {interrupted} interrupted job(s) from a previous run")
     server = ThreadingHTTPServer((args.host, args.port), WorkbenchHandler)
     print(f"active learning workbench: http://{args.host}:{args.port}")
     try:

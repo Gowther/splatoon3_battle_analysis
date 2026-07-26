@@ -15,6 +15,7 @@ from src.active_learning_workbench import (
     load_candidate_queue,
     load_jobs,
     prefill_candidate_staging,
+    reconcile_running_jobs,
     scan_asset_inbox,
     start_job_record,
     upsert_staging_annotation,
@@ -317,6 +318,32 @@ class ActiveLearningWorkbenchTests(unittest.TestCase):
 
         self.assertEqual(finished["status"], "passed")
         self.assertEqual(jobs["jobs"][0]["id"], job["id"])
+
+    def test_reconcile_running_jobs_marks_stranded_jobs_interrupted(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            jobs_path = Path(tmp_name) / "jobs.json"
+            running = start_job_record("refresh_training_candidates", {}, path=jobs_path)
+            done = start_job_record("validate_training_datasets", {}, path=jobs_path)
+            finish_job_record(done["id"], {"status": "passed"}, path=jobs_path)
+
+            count = reconcile_running_jobs(path=jobs_path)
+            jobs = {item["id"]: item for item in load_jobs(jobs_path)["jobs"]}
+
+        self.assertEqual(count, 1)
+        self.assertEqual(jobs[running["id"]]["status"], "interrupted")
+        self.assertTrue(jobs[running["id"]]["completed_at"])
+        self.assertEqual(jobs[running["id"]]["result"]["status"], "interrupted")
+        self.assertEqual(jobs[done["id"]]["status"], "passed")
+
+    def test_reconcile_running_jobs_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            jobs_path = Path(tmp_name) / "jobs.json"
+            start_job_record("refresh_training_candidates", {}, path=jobs_path)
+            first = reconcile_running_jobs(path=jobs_path)
+            second = reconcile_running_jobs(path=jobs_path)
+
+        self.assertEqual(first, 1)
+        self.assertEqual(second, 0)
 
     def test_command_for_action_requires_confirm_for_dangerous_actions(self):
         with self.assertRaises(ValueError):

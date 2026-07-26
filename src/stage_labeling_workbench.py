@@ -7,10 +7,12 @@ from typing import Any, Mapping
 from src.active_learning_workbench import safe_project_file, utc_now
 from src.core.paths import ROOT, project_path
 from src.data_registry import display_path
+from src.heatmap.config_loader import load_config, resolve_path
 from src.heatmap.stage_coordinates import (
     build_control_point_asset,
     validate_control_point_asset,
 )
+from src.heatmap.stage_quality import build_control_point_quality_report
 
 
 DEFAULT_REFERENCE_ROOT = ROOT / "outputs" / "stage_reference"
@@ -116,6 +118,47 @@ def normalize_labeled_points(raw_points: Any) -> list[dict[str, Any]]:
     return points
 
 
+def quality_config_for_package(package_dir: Path) -> dict[str, Any] | None:
+    """Config the geometry gates need, in the ROI the points were labeled in.
+
+    Clicks are recorded in the exported frame against the manifest's
+    ``source_roi``, so the coverage and corner gates must measure against that
+    same box. The heatmap config usually carries the same ROI, but the manifest
+    is authoritative per package: a second stage sharing one config would label
+    in its own ROI, and measuring it against the config box would map perfectly
+    good corners far outside stage space.
+    """
+    manifest = load_manifest(package_dir)
+    if manifest is None:
+        return None
+    roi = manifest.get("source_roi")
+    if isinstance(roi, Mapping):
+        return {"map_view": {"roi": roi}}
+    config_value = str(manifest.get("config", "")).strip()
+    if config_value:
+        try:
+            return load_config(resolve_path(config_value))
+        except (OSError, ValueError, KeyError):
+            pass
+    return None
+
+
+def quality_report_for_asset(package_dir: Path, asset: Mapping[str, Any]) -> dict[str, Any]:
+    """Run the geometry gates that reprojection alone cannot see.
+
+    Reprojection only checks the control points against themselves, so points
+    clustered in one corner score perfectly while mapping the rest of the map
+    outside the stage. Coverage and corner sanity are what catch that.
+    """
+    config = quality_config_for_package(package_dir)
+    if config is None:
+        return {"status": "not_available", "reason": "no map ROI available for this package"}
+    try:
+        return build_control_point_quality_report(config, asset)
+    except (KeyError, TypeError, ValueError) as exc:
+        return {"status": "not_available", "reason": str(exc)}
+
+
 def save_stage_labels(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Save labeled control points into the package draft and validate them."""
     package_value = str(payload.get("package_dir", "")).strip()
@@ -140,6 +183,7 @@ def save_stage_labels(payload: Mapping[str, Any]) -> dict[str, Any]:
         ],
     )
     report = validate_control_point_asset(asset)
+    quality = quality_report_for_asset(package_dir, asset)
 
     draft_path = package_dir / "control_points_draft.json"
     draft_path.write_text(json.dumps(asset, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -151,6 +195,7 @@ def save_stage_labels(payload: Mapping[str, Any]) -> dict[str, Any]:
         "template": keep_template,
         "control_point_count": len(points),
         "validation": report,
+        "quality": quality,
     }
 
 
@@ -169,11 +214,21 @@ def promote_stage_labels(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("draft has no stage_id")
 
     report = validate_control_point_asset(draft)
+    quality = quality_report_for_asset(package_dir, draft)
     if report["status"] != "ready":
         return {
             "promoted": False,
             "stage_id": stage_id,
             "validation": report,
+            "quality": quality,
+        }
+    if quality.get("status") == "needs_review":
+        return {
+            "promoted": False,
+            "stage_id": stage_id,
+            "validation": report,
+            "quality": quality,
+            "blocked_by": quality.get("failed_checks", []),
         }
 
     target = promoted_asset_path(stage_id)
@@ -186,6 +241,7 @@ def promote_stage_labels(payload: Mapping[str, Any]) -> dict[str, Any]:
         "stage_id": stage_id,
         "asset_path": display_path(target),
         "validation": report,
+        "quality": quality,
         "next_step": (
             f"python scripts/report_stage_coordinates.py --config {config_path} "
             f"--control-points {display_path(target)}"
