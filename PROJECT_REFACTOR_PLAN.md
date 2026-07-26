@@ -34,6 +34,7 @@ Use these entrypoints for active development:
 | `python scripts/report_stage_control_point_quality.py` | Gate stage control points on reprojection, ROI coverage, corner sanity, and cross-frame drift. |
 | `python scripts/report_stage_registry.py` | Register matches to stages, reuse control points across matches, and cross-validate labelings. |
 | `python scripts/render_stage_heatmaps.py` | Render fixed-canvas stage-space heatmaps and routes that compare across matches. |
+| `python scripts/report_stage_aggregate.py` | Aggregate and compare stage-space heatmaps across every match on one stage. |
 | `python scripts/export_heatmap_annotation_package.py` | Export frames and CSV templates for manual heatmap point labels. |
 | `python scripts/evaluate_heatmap_annotations.py` | Evaluate heatmap predictions against manual player point labels. |
 | `python scripts/export_heatmap_anomalies.py` | Export low-quality heatmap frames for manual review. |
@@ -210,6 +211,7 @@ python scripts/export_stage_reference.py --config src/heatmap/config_match9.yaml
 python scripts/report_stage_control_point_quality.py --config src/heatmap/config_match9.yaml --strict
 python scripts/report_stage_registry.py --strict
 python scripts/render_stage_heatmaps.py --config src/heatmap/config_match9.yaml
+python scripts/report_stage_aggregate.py --stage-id scorch_gorge
 python scripts/export_heatmap_annotation_package.py --output-dir outputs/annotation_samples
 python scripts/evaluate_heatmap_annotations.py outputs/annotation_samples/annotation_template.csv
 python scripts/export_heatmap_anomalies.py --output-dir outputs/heatmap_anomalies
