@@ -1,6 +1,6 @@
 # Stage Coordinate Normalization
 
-这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1：为一场对战建立可复用的控制点资产，并让 homography 真正生效。
+这个文档记录“把热力图坐标从源视频像素变成标准场地坐标”的建设路线。当前完成的是 Goal 1-2：homography 已能真正生效，并且有了给人工填地标用的参考帧包。
 
 ## 为什么需要这一层
 
@@ -104,12 +104,52 @@ Goal 1 只解决“单场对战、单组人工控制点、单一 homography”�
 
 这些会在 Goal 2-6 通过参考帧导出、Web 标注、跨帧稳定性评估和 stage 注册表逐步补上。
 
+## Goal 2: 参考帧包
+
+Goal 2 新增命令：
+
+```bash
+.venv/bin/python scripts/export_stage_reference.py \
+  --config src/heatmap/config_match9.yaml \
+  --stage-id match9_stage \
+  --times 30,60,90
+```
+
+默认输出到 `outputs/stage_reference/<stage_id>/`：
+
+- `frames/reference_*.jpg`: 带绿色 ROI 边框和归一化网格刻度的参考帧。
+  默认取配置的 `reference_time_seconds`，`--times` 可以追加多个时间点，
+  方便挑一帧遮挡最少的画面。
+- `control_points_draft.json`: ROI 角点种子草稿，`template: true`。
+  在把 4 个种子点换成真实地标之前，它无法通过校验，也无法启用 homography。
+- `README.md`: 中文填写说明，含地标选择建议和校验命令。
+- `manifest.json`: 导出清单和下一步提示。
+
+网格刻度标注的是 ROI 线性归一化坐标，只用来帮助人读出像素位置；填进
+`target` 的应该是地标在标准场地图上的位置，两者在有透视形变时不相等。
+
+填完地标并把 `template` 改成 `false` 后：
+
+```bash
+.venv/bin/python scripts/build_stage_control_points.py \
+  --config src/heatmap/config_match9.yaml \
+  --control-points outputs/stage_reference/match9_stage/control_points_draft.json \
+  --validate --strict
+```
+
+校验通过即可复制为 `config/stage_control_points/<stage_id>.json` 正式资产。
+
+Goal 2 之后仍未解决：地标填错但不共线时只能靠人复查；这依赖 Goal 3 的
+Web 标注入口（点选自动写坐标）和 Goal 5 的跨帧稳定性评估。
+
 ## 相关文件
 
 | 路径 | 作用 |
 | --- | --- |
 | `src/heatmap/stage_coordinates.py` | ROI 归一化、控制点解析、homography 求解与重投影自检。 |
+| `src/heatmap/stage_reference.py` | 网格参考帧导出、控制点草稿与填写说明生成。 |
 | `scripts/build_stage_control_points.py` | 生成和校验控制点资产。 |
+| `scripts/export_stage_reference.py` | 导出地标标注用的参考帧包。 |
 | `scripts/report_stage_coordinates.py` | 报告归一化状态并导出 `stage_x/stage_y`。 |
 | `config/stage_control_points.template.json` | 控制点模板。 |
 | `config/stage_control_points/` | 真实控制点资产目录。 |
