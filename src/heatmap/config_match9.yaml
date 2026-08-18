@@ -91,6 +91,12 @@ point_cleaning:
   merge_distance_px: 18
   track_slots_per_team: 4
   max_track_step_px: 420
+  max_track_speed_px_per_second: 360
+  max_track_gap_seconds: 3.0
+  prediction_horizon_seconds: 1.0
+  min_assignment_gate_px: 45
+  assignment_confidence_weight_px: 30
+  velocity_smoothing_alpha: 0.65
   debug_reference_time_seconds: 60.0
 
 rendering:

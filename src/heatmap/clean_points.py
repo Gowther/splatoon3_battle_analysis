@@ -4,19 +4,34 @@ import argparse
 import csv
 import math
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import DefaultDict, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from src.heatmap.detect_markers import load_mask
 from src.heatmap.extract_frames import load_config, resolve_path
 
 
 Point = Dict[str, object]
-TrackState = Optional[Tuple[float, float, float]]
 FrameKey = Tuple[float, str]
+
+
+@dataclass
+class TrackState:
+    x: float
+    y: float
+    time: float
+    vx: float = 0.0
+    vy: float = 0.0
+    observations: int = 1
+
+    def predicted_position(self, time_value: float, horizon_seconds: float) -> Tuple[float, float]:
+        elapsed = max(0.0, min(float(time_value) - self.time, horizon_seconds))
+        return self.x + self.vx * elapsed, self.y + self.vy * elapsed
 
 
 CLEAN_FIELDNAMES = [
@@ -60,6 +75,10 @@ TRACK_FIELDNAMES = [
     "confidence",
     "track_status",
     "step_distance",
+    "time_delta",
+    "prediction_error",
+    "tracking_confidence",
+    "observation_count",
     "frame_path",
 ]
 
@@ -186,30 +205,68 @@ def group_points_by_frame(clean_points: Sequence[Point]) -> DefaultDict[Tuple[st
 
 def assign_tracks_for_team(
     candidates: Sequence[Point],
-    states: Dict[int, TrackState],
-    max_step: float,
+    states: Dict[int, Optional[TrackState]],
+    time_value: float,
+    tracking_config: Dict,
 ) -> List[Dict[str, object]]:
+    """Assign one frame of candidates to stable slots with global matching.
+
+    The previous implementation accepted the shortest pair greedily. That can
+    swap two slots when players cross because an early local choice prevents a
+    better assignment for the remaining points. A four-by-four Hungarian match
+    is cheap and lets velocity, elapsed time, and detection confidence
+    contribute to one global decision.
+    """
     candidates = sorted(candidates, key=lambda row: float(row["confidence"]), reverse=True)
-    assigned_slots: Dict[int, Tuple[int, str, Optional[float]]] = {}
-    assigned_candidate_indexes = set()
+    assigned_slots: Dict[int, Tuple[int, str, Optional[float], Optional[float], Optional[float]]] = {}
+    assigned_candidate_indexes: set[int] = set()
+    max_speed = float(tracking_config.get("max_track_speed_px_per_second", tracking_config["max_track_step_px"]))
+    max_gap = float(tracking_config.get("max_track_gap_seconds", 3.0))
+    prediction_horizon = float(tracking_config.get("prediction_horizon_seconds", 1.0))
+    confidence_weight = float(tracking_config.get("assignment_confidence_weight_px", 30.0))
+    velocity_alpha = float(tracking_config.get("velocity_smoothing_alpha", 0.65))
+    min_gate = float(tracking_config.get("min_assignment_gate_px", 45.0))
 
-    possible_matches: List[Tuple[float, int, int]] = []
-    for slot, state in states.items():
-        if state is None:
-            continue
-        previous_x, previous_y, _ = state
-        for index, point in enumerate(candidates):
-            distance = math.hypot(float(point["x"]) - previous_x, float(point["y"]) - previous_y)
-            if distance <= max_step:
-                possible_matches.append((distance, slot, index))
+    active_slots = [
+        slot
+        for slot, state in sorted(states.items())
+        if state is not None and 0.0 < time_value - state.time <= max_gap
+    ]
+    if active_slots and candidates:
+        invalid_cost = 1e9
+        costs = np.full((len(active_slots), len(candidates)), invalid_cost, dtype=np.float64)
+        metadata: Dict[Tuple[int, int], Tuple[float, float, float]] = {}
+        for slot_index, slot in enumerate(active_slots):
+            state = states[slot]
+            assert state is not None
+            time_delta = time_value - state.time
+            predicted_x, predicted_y = state.predicted_position(time_value, prediction_horizon)
+            gate = max(min_gate, max_speed * time_delta)
+            for candidate_index, point in enumerate(candidates):
+                prediction_error = math.hypot(
+                    float(point["x"]) - predicted_x,
+                    float(point["y"]) - predicted_y,
+                )
+                if prediction_error > gate:
+                    continue
+                step_distance = math.hypot(
+                    float(point["x"]) - state.x,
+                    float(point["y"]) - state.y,
+                )
+                confidence_penalty = (1.0 - float(point["confidence"])) * confidence_weight
+                costs[slot_index, candidate_index] = prediction_error + confidence_penalty
+                metadata[(slot_index, candidate_index)] = (step_distance, time_delta, prediction_error)
 
-    for distance, slot, index in sorted(possible_matches):
-        if slot in assigned_slots or index in assigned_candidate_indexes:
-            continue
-        assigned_slots[slot] = (index, "matched", distance)
-        assigned_candidate_indexes.add(index)
+        slot_indexes, candidate_indexes = linear_sum_assignment(costs)
+        for slot_index, candidate_index in zip(slot_indexes.tolist(), candidate_indexes.tolist()):
+            if costs[slot_index, candidate_index] >= invalid_cost:
+                continue
+            slot = active_slots[slot_index]
+            step_distance, time_delta, prediction_error = metadata[(slot_index, candidate_index)]
+            assigned_slots[slot] = (candidate_index, "matched", step_distance, time_delta, prediction_error)
+            assigned_candidate_indexes.add(candidate_index)
 
-    for index, _ in enumerate(candidates):
+    for index, point in enumerate(candidates):
         if index in assigned_candidate_indexes:
             continue
         available_slots = [slot for slot in sorted(states) if slot not in assigned_slots]
@@ -218,23 +275,52 @@ def assign_tracks_for_team(
         empty_slots = [slot for slot in available_slots if states[slot] is None]
         if empty_slots:
             slot = empty_slots[0]
-            assigned_slots[slot] = (index, "new", None)
+            assigned_slots[slot] = (index, "new", None, None, None)
         else:
-            def distance_to_slot(slot_number: int) -> float:
-                state = states[slot_number]
-                assert state is not None
-                previous_x, previous_y, _ = state
-                point = candidates[index]
-                return math.hypot(float(point["x"]) - previous_x, float(point["y"]) - previous_y)
-
-            slot = min(available_slots, key=distance_to_slot)
-            assigned_slots[slot] = (index, "jump_reset", distance_to_slot(slot))
+            stale_slots = [
+                slot
+                for slot in available_slots
+                if states[slot] is not None and time_value - states[slot].time > max_gap
+            ]
+            if not stale_slots:
+                continue
+            slot = min(stale_slots, key=lambda slot_number: states[slot_number].time if states[slot_number] else 0.0)
+            previous = states[slot]
+            assert previous is not None
+            distance = math.hypot(float(point["x"]) - previous.x, float(point["y"]) - previous.y)
+            assigned_slots[slot] = (index, "reacquired", distance, time_value - previous.time, None)
         assigned_candidate_indexes.add(index)
 
     track_rows: List[Dict[str, object]] = []
-    for slot, (index, status, distance) in sorted(assigned_slots.items()):
+    for slot, (index, status, distance, time_delta, prediction_error) in sorted(assigned_slots.items()):
         point = candidates[index]
-        states[slot] = (float(point["x"]), float(point["y"]), float(point["time"]))
+        previous = states[slot]
+        observations = 1
+        vx = 0.0
+        vy = 0.0
+        if previous is not None and time_delta is not None and time_delta > 0.0:
+            observed_vx = (float(point["x"]) - previous.x) / time_delta
+            observed_vy = (float(point["y"]) - previous.y) / time_delta
+            vx = velocity_alpha * observed_vx + (1.0 - velocity_alpha) * previous.vx
+            vy = velocity_alpha * observed_vy + (1.0 - velocity_alpha) * previous.vy
+            observations = previous.observations + 1
+        states[slot] = TrackState(
+            x=float(point["x"]),
+            y=float(point["y"]),
+            time=time_value,
+            vx=vx,
+            vy=vy,
+            observations=observations,
+        )
+        detection_confidence = float(point["confidence"])
+        if status == "matched" and prediction_error is not None and time_delta is not None:
+            gate = max(min_gate, max_speed * time_delta)
+            continuity_score = max(0.0, 1.0 - prediction_error / gate)
+            tracking_confidence = 0.55 * detection_confidence + 0.45 * continuity_score
+        elif status == "new":
+            tracking_confidence = 0.55 * detection_confidence
+        else:
+            tracking_confidence = 0.40 * detection_confidence
         track_rows.append(
             {
                 "match_id": point["match_id"],
@@ -247,6 +333,10 @@ def assign_tracks_for_team(
                 "confidence": point["confidence"],
                 "track_status": status,
                 "step_distance": "" if distance is None else round(distance, 2),
+                "time_delta": "" if time_delta is None else round(time_delta, 3),
+                "prediction_error": "" if prediction_error is None else round(prediction_error, 2),
+                "tracking_confidence": round(max(0.0, min(1.0, tracking_confidence)), 4),
+                "observation_count": observations,
                 "frame_path": point["frame_path"],
             }
         )
@@ -256,11 +346,10 @@ def assign_tracks_for_team(
 def build_tracks(clean_points: Sequence[Point], config: Dict) -> List[Dict[str, object]]:
     cleaning = config["point_cleaning"]
     slots_per_team = int(cleaning["track_slots_per_team"])
-    max_step = float(cleaning["max_track_step_px"])
     teams = list(config["teams"].keys())
     grouped = group_points_by_frame(clean_points)
     frame_keys = sorted({(time, frame_index) for time, frame_index, _ in grouped}, key=lambda item: float(item[0]))
-    states: Dict[str, Dict[int, TrackState]] = {
+    states: Dict[str, Dict[int, Optional[TrackState]]] = {
         team: {slot: None for slot in range(1, slots_per_team + 1)} for team in teams
     }
 
@@ -268,7 +357,7 @@ def build_tracks(clean_points: Sequence[Point], config: Dict) -> List[Dict[str, 
     for time_value, frame_index in frame_keys:
         for team in teams:
             candidates = grouped.get((time_value, frame_index, team), [])
-            tracks.extend(assign_tracks_for_team(candidates, states[team], max_step))
+            tracks.extend(assign_tracks_for_team(candidates, states[team], float(time_value), cleaning))
     return tracks
 
 
@@ -283,7 +372,21 @@ def metric_rows(
         {"metric": "clean_points", "value": len(clean_points)},
         {"metric": "rejected_points", "value": len(rejected)},
         {"metric": "track_rows", "value": len(tracks)},
+        {"metric": "track_unassigned_points", "value": max(0, len(clean_points) - len(tracks))},
+        {
+            "metric": "track_coverage_ratio",
+            "value": round(len(tracks) / len(clean_points), 4) if clean_points else 0.0,
+        },
     ]
+    tracking_confidences = [float(row["tracking_confidence"]) for row in tracks if row.get("tracking_confidence") != ""]
+    rows.append(
+        {
+            "metric": "mean_tracking_confidence",
+            "value": round(sum(tracking_confidences) / len(tracking_confidences), 4)
+            if tracking_confidences
+            else 0.0,
+        }
+    )
 
     for team, count in sorted(Counter(str(point["team"]) for point in clean_points).items()):
         rows.append({"metric": f"clean_team_{team}", "value": count})

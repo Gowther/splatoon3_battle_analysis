@@ -340,7 +340,23 @@ def write_report(
         ]
     )
 
-    lines.extend(metric_lines("Cleaning", cleaning, ["raw_points", "clean_points", "rejected_points", "track_status_matched", "track_status_jump_reset"]))
+    lines.extend(
+        metric_lines(
+            "Cleaning",
+            cleaning,
+            [
+                "raw_points",
+                "clean_points",
+                "rejected_points",
+                "track_rows",
+                "track_unassigned_points",
+                "track_coverage_ratio",
+                "mean_tracking_confidence",
+                "track_status_matched",
+                "track_status_reacquired",
+            ],
+        )
+    )
     lines.append("")
     lines.extend(metric_lines("State Join", state_join, ["state_rows", "matched_rows", "unmatched_rows", "max_observed_delta_seconds"]))
     lines.append("")

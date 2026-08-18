@@ -28,8 +28,12 @@ PLAYER_TRACK_FIELDS = [
     "y",
     "confidence",
     "identity_confidence",
+    "tracking_confidence",
     "track_status",
     "step_distance",
+    "time_delta",
+    "prediction_error",
+    "observation_count",
     "identity_method",
     "identity_note",
     "frame_path",
@@ -89,8 +93,12 @@ def identity_confidence(row: Row, weapon_hint: str, config: Dict) -> float:
         score += float(identity["matched_bonus"])
     if weapon_hint:
         score += float(identity["weapon_hint_bonus"])
-    if row.get("track_status") == "jump_reset":
+    if row.get("track_status") in {"jump_reset", "reacquired"}:
         score -= float(identity["jump_reset_penalty"])
+    try:
+        score += 0.25 * float(row.get("tracking_confidence", 0.0))
+    except (TypeError, ValueError):
+        pass
     return round(max(0.0, min(1.0, score)), 3)
 
 
@@ -120,14 +128,18 @@ def build_player_tracks(config: Dict) -> Tuple[List[Dict[str, object]], List[Dic
             "y": row.get("y", ""),
             "confidence": row.get("confidence", ""),
             "identity_confidence": identity_confidence(row, weapon_hint, config),
+            "tracking_confidence": row.get("tracking_confidence", ""),
             "track_status": status,
             "step_distance": row.get("step_distance", ""),
+            "time_delta": row.get("time_delta", ""),
+            "prediction_error": row.get("prediction_error", ""),
+            "observation_count": row.get("observation_count", ""),
             "identity_method": method,
             "identity_note": note,
             "frame_path": row.get("frame_path", ""),
         }
         player_rows.append(output)
-        if status in {"new", "jump_reset"}:
+        if status in {"new", "jump_reset", "reacquired"}:
             gap_rows.append(
                 {
                     "match_id": output["match_id"],
