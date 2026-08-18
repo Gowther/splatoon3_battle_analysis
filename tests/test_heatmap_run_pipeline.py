@@ -10,6 +10,7 @@ from src.heatmap.run_pipeline import (
     clean_generated_outputs,
     configured_output_paths,
     run_stage_normalization,
+    run_stage_rendering,
     write_run_manifest,
 )
 from src.heatmap.stage_coordinates import discover_control_point_asset
@@ -105,9 +106,11 @@ class HeatmapRunPipelineTests(unittest.TestCase):
 
         self.assertIn("player_tracks_stage.csv", paths)
 
-    def test_run_stage_normalization_without_asset(self) -> None:
+    def test_run_stage_normalization_without_asset_uses_provisional_roi_coordinates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "heatmap"
+            output_dir.mkdir(parents=True)
+            (output_dir / "player_tracks.csv").write_text("x,y\n50,25\n", encoding="utf-8")
             config = {
                 "match": {"id": "no_asset_match", "output_dir": str(output_dir)},
                 "outputs": {"player_tracks_csv": str(output_dir / "player_tracks.csv")},
@@ -116,7 +119,10 @@ class HeatmapRunPipelineTests(unittest.TestCase):
 
             result = run_stage_normalization(config)
 
-        self.assertEqual(result["status"], "no_asset")
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["method"], "roi_linear_normalization")
+        self.assertEqual(result["quality"], "provisional")
+        self.assertEqual(result["normalized_rows"], 1)
 
     def test_run_stage_normalization_with_asset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -160,7 +166,7 @@ class HeatmapRunPipelineTests(unittest.TestCase):
             self.assertIn("stage_x", header)
             self.assertIn("stage_inside_roi", header)
 
-    def test_run_stage_normalization_ignores_template_asset(self) -> None:
+    def test_run_stage_normalization_ignores_template_asset_and_uses_roi_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             output_dir = root / "heatmap"
@@ -191,7 +197,17 @@ class HeatmapRunPipelineTests(unittest.TestCase):
 
             result = run_stage_normalization(config)
 
-        self.assertEqual(result["status"], "no_asset")
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["method"], "roi_linear_normalization")
+        self.assertEqual(result["homography_status"], "needs_control_points")
+
+    def test_stage_rendering_is_skipped_without_normalized_tracks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = {"match": {"output_dir": tmp}, "outputs": {}}
+
+            result = run_stage_rendering(config, {"status": "no_points"})
+
+        self.assertEqual(result["status"], "skipped")
 
 
 class DiscoverControlPointAssetTests(unittest.TestCase):

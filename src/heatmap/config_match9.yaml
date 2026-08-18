@@ -42,6 +42,12 @@ map_view:
       x2: 1920
       y2: 1080
 
+stage_coordinates:
+  stage_id: match9_stage
+  # ROI normalization is usable within this match. Cross-match comparisons
+  # require a promoted real-landmark control-point asset.
+  allow_roi_fallback: true
+
 frame_quality:
   # These thresholds are initial hints only. Goal 2 should verify them with
   # debug output before relying on them.
@@ -187,6 +193,8 @@ outputs:
   event_segments_csv: outputs/heatmap_match9/event_segments.csv
   event_join_report_csv: outputs/heatmap_match9/event_join_report.csv
   player_tracks_csv: outputs/heatmap_match9/player_tracks.csv
+  player_tracks_stage_csv: outputs/heatmap_match9/player_tracks_stage.csv
+  rendered_stage_dir: outputs/heatmap_match9/rendered_stage
   player_track_gaps_csv: outputs/heatmap_match9/player_track_gaps.csv
   player_routes_dir: outputs/heatmap_match9/player_routes
   identity_report_csv: outputs/heatmap_match9/identity_report.csv

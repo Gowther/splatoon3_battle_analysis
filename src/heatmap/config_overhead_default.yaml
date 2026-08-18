@@ -35,6 +35,10 @@ map_view:
       x2: 1920
       y2: 1080
 
+stage_coordinates:
+  stage_id: "{match_id}_stage"
+  allow_roi_fallback: true
+
 frame_quality:
   min_ink_ratio: 0.06
   max_large_overlay_ratio: 0.35
@@ -175,6 +179,8 @@ outputs:
   event_segments_csv: "{output_dir}/event_segments.csv"
   event_join_report_csv: "{output_dir}/event_join_report.csv"
   player_tracks_csv: "{output_dir}/player_tracks.csv"
+  player_tracks_stage_csv: "{output_dir}/player_tracks_stage.csv"
+  rendered_stage_dir: "{output_dir}/rendered_stage"
   player_track_gaps_csv: "{output_dir}/player_track_gaps.csv"
   player_routes_dir: "{output_dir}/player_routes"
   identity_report_csv: "{output_dir}/identity_report.csv"

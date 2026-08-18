@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from src.heatmap.color_calibration import resolve_config
 from src.heatmap.extract_frames import ROOT, load_config, resolve_path
+from src.heatmap.render_stage_space import render_stage_heatmaps
 from src.heatmap.stage_coordinates import (
     build_stage_coordinate_report,
     discover_control_point_asset,
@@ -27,13 +28,16 @@ def stage_tracks_csv_path(config: Dict) -> Path:
 
 
 def run_stage_normalization(config: Dict) -> Dict[str, Any]:
-    """Normalize player tracks to stage coordinates when a promoted asset exists."""
+    """Normalize tracks with homography, or an explicit provisional ROI fallback."""
     asset = discover_control_point_asset(config)
-    if asset is None:
-        return {"status": "no_asset", "method": "", "output": ""}
     points_csv = resolve_path(config["outputs"]["player_tracks_csv"])
     if not points_csv.exists():
-        return {"status": "no_points", "method": "", "output": "", "asset": asset.get("path", "")}
+        return {
+            "status": "no_points",
+            "method": "",
+            "output": "",
+            "asset": asset.get("path", "") if asset else "",
+        }
     output_csv = stage_tracks_csv_path(config)
     report = build_stage_coordinate_report(
         config,
@@ -46,14 +50,31 @@ def run_stage_normalization(config: Dict) -> Dict[str, Any]:
     return {
         "status": report.get("status", ""),
         "method": transform.get("method", ""),
+        "quality": "calibrated" if transform.get("method") == "homography" else "provisional",
         "homography_status": transform.get("homography_status", ""),
         "reprojection": transform.get("reprojection", {}),
-        "asset": asset.get("path", ""),
-        "stage_id": asset.get("stage_id", ""),
+        "asset": asset.get("path", "") if asset else "",
+        "stage_id": asset.get("stage_id", "") if asset else config.get("stage_coordinates", {}).get("stage_id", ""),
         "output": rel(output_csv),
         "normalized_rows": summary.get("normalized_rows", 0),
         "outside_roi_rows": summary.get("outside_roi_rows", 0),
     }
+
+
+def stage_render_dir(config: Dict) -> Path:
+    configured = config.get("outputs", {}).get("rendered_stage_dir")
+    if isinstance(configured, str) and configured:
+        return resolve_path(configured)
+    return resolve_path(config["match"]["output_dir"]) / "rendered_stage"
+
+
+def run_stage_rendering(config: Dict, stage_normalization: Dict[str, Any]) -> Dict[str, Any]:
+    if stage_normalization.get("status") != "ready":
+        return {"status": "skipped", "rendered": {}, "output_dir": rel(stage_render_dir(config))}
+    report = render_stage_heatmaps(stage_tracks_csv_path(config), config, stage_render_dir(config))
+    report["coordinate_method"] = stage_normalization.get("method", "")
+    report["coordinate_quality"] = stage_normalization.get("quality", "")
+    return report
 
 
 def parse_args() -> argparse.Namespace:
@@ -195,6 +216,7 @@ def write_run_manifest(
     command_hint: str,
     cleaned_paths: List[str],
     stage_normalization: Optional[Dict[str, Any]] = None,
+    stage_rendering: Optional[Dict[str, Any]] = None,
 ) -> Path:
     output_dir = resolve_path(config["match"]["output_dir"])
     manifest_path = output_dir / "run_manifest.json"
@@ -206,6 +228,8 @@ def write_run_manifest(
     }
     if stage_normalization and stage_normalization.get("output"):
         extra_artifacts["stage_tracks"] = resolve_path(stage_normalization["output"])
+    if stage_rendering and stage_rendering.get("output_dir"):
+        extra_artifacts["stage_rendering"] = resolve_path(stage_rendering["output_dir"])
     manifest = {
         "schema_version": 1,
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
@@ -229,6 +253,7 @@ def write_run_manifest(
         },
         "cleaned_paths": cleaned_paths,
         "stage_normalization": stage_normalization or {"status": "no_asset", "method": "", "output": ""},
+        "stage_rendering": stage_rendering or {"status": "skipped", "rendered": {}},
         "artifacts": artifact_status(config, extra_artifacts),
     }
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -241,6 +266,7 @@ def write_report(
     command_hint: Optional[str] = None,
     *,
     stage_normalization: Optional[Dict[str, Any]] = None,
+    stage_rendering: Optional[Dict[str, Any]] = None,
 ) -> Path:
     outputs = config["outputs"]
     output_dir = resolve_path(config["match"]["output_dir"])
@@ -374,6 +400,7 @@ def write_report(
         lines.extend(
             [
                 f"- method: `{stage_info.get('method', '')}`",
+                f"- quality: `{stage_info.get('quality', '')}`",
                 f"- control point asset: `{stage_info.get('asset', '')}`",
                 f"- stage tracks: `{stage_info.get('output', '')}`",
                 f"- normalized rows: {stage_info.get('normalized_rows', 0)}",
@@ -390,8 +417,19 @@ def write_report(
     stage_limit_line = (
         "- Stage coordinates use the promoted control-point homography; verify landmarks before trusting cross-match comparisons."
         if stage_info.get("status") == "ready" and stage_info.get("method") == "homography"
-        else "- The current coordinate system is source-video pixels, not a normalized stage-map homography."
+        else "- Stage coordinates are a provisional 0..1 mapping of the configured video ROI; promote real control points before cross-match comparisons."
     )
+    stage_render_info = stage_rendering or {"status": "skipped"}
+    if stage_render_info.get("status") == "ready":
+        lines.extend(
+            [
+                "",
+                "### Stage-Space Rendering",
+                "",
+                artifact_line("normalized routes", stage_render_dir(config) / "stage_routes.png"),
+                artifact_line("normalized combined heatmap", stage_render_dir(config) / "stage_heatmap_combined.png"),
+            ]
+        )
     lines.extend(
         [
             "",
@@ -413,6 +451,8 @@ def write_report(
             "",
         ]
     )
+    if stage_render_info.get("status") == "ready":
+        lines.extend(["![normalized routes](rendered_stage/stage_routes.png)", ""])
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(lines), encoding="utf-8")
@@ -505,7 +545,14 @@ def main() -> int:
         )
     else:
         print(f"stage normalization: {stage_normalization.get('status', 'no_asset')}")
-    report_path = write_report(config, command_hint, stage_normalization=stage_normalization)
+    stage_rendering = run_stage_rendering(config, stage_normalization)
+    print(f"stage rendering: {stage_rendering.get('status', 'skipped')}")
+    report_path = write_report(
+        config,
+        command_hint,
+        stage_normalization=stage_normalization,
+        stage_rendering=stage_rendering,
+    )
     manifest_path = write_run_manifest(
         config,
         args,
@@ -516,6 +563,7 @@ def main() -> int:
         command_hint=command_hint,
         cleaned_paths=cleaned_paths,
         stage_normalization=stage_normalization,
+        stage_rendering=stage_rendering,
     )
     print(f"\nreport: {report_path}")
     print(f"manifest: {manifest_path}")
