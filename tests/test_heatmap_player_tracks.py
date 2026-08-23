@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from src.heatmap.clean_points import TrackState, assign_tracks_for_team
-from src.heatmap.infer_player_tracks import clean_route_images
+from src.heatmap.infer_player_tracks import clean_route_images, report_rows
 
 
 TRACKING_CONFIG = {
@@ -29,7 +29,15 @@ def point(x: float, y: float, *, confidence: float = 0.9) -> dict:
         "y": y,
         "confidence": confidence,
         "frame_path": "frame.jpg",
+        "track_slot_hint": "",
+        "player_id": "",
     }
+
+
+def identified_point(x: float, y: float, slot: int, player_id: str) -> dict:
+    row = point(x, y)
+    row.update({"track_slot_hint": slot, "player_id": player_id, "source": "player_name_template"})
+    return row
 
 
 class HeatmapPlayerTracksTests(unittest.TestCase):
@@ -91,6 +99,54 @@ class HeatmapPlayerTracksTests(unittest.TestCase):
         self.assertEqual(rows[0]["time_delta"], 1.0)
         self.assertEqual(rows[0]["observation_count"], 4)
         self.assertGreater(rows[0]["tracking_confidence"], 0.8)
+
+    def test_name_template_hint_binds_observation_to_configured_slot(self) -> None:
+        states = {1: TrackState(100, 100, 0), 2: TrackState(500, 500, 0)}
+        rows = assign_tracks_for_team(
+            [identified_point(505, 500, 2, "blue_player_2")],
+            states,
+            time_value=1.0,
+            tracking_config=TRACKING_CONFIG,
+        )
+        self.assertEqual(rows[0]["track_slot"], 2)
+        self.assertEqual(rows[0]["player_id"], "blue_player_2")
+        self.assertEqual(rows[0]["track_status"], "matched")
+
+    def test_large_hinted_step_is_explicit_jump_reset(self) -> None:
+        states = {1: TrackState(100, 100, 0)}
+        config = {**TRACKING_CONFIG, "max_matched_gap_seconds": 0.5, "max_matched_step_px": 120}
+        rows = assign_tracks_for_team(
+            [identified_point(250, 100, 1, "yellow_player_1")],
+            states,
+            time_value=0.2,
+            tracking_config=config,
+        )
+        self.assertEqual(rows[0]["track_status"], "jump_reset")
+
+    def test_identity_report_exposes_gap_and_step_quality_metrics(self) -> None:
+        rows = [
+            {
+                "player_id": "yellow_player_1",
+                "track_status": "matched",
+                "step_distance": "55",
+                "identity_note": "hud_slot_mapping_verified",
+            },
+            {
+                "player_id": "yellow_player_1",
+                "track_status": "reacquired",
+                "step_distance": "200",
+                "identity_note": "hud_slot_mapping_verified",
+            },
+        ]
+
+        report = {row["metric"]: row["value"] for row in report_rows(rows, [{"time": "2"}], [Path("route.png")])}
+
+        self.assertEqual(report["gap_ratio"], 0.5)
+        self.assertEqual(report["large_step_rows"], 1)
+        self.assertEqual(report["matched_large_step_rows"], 0)
+        self.assertEqual(report["reacquired_large_step_rows"], 1)
+        self.assertEqual(report["max_matched_step_px"], 55.0)
+        self.assertEqual(report["max_reacquired_step_px"], 200.0)
 
     def test_clean_route_images_removes_only_png_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

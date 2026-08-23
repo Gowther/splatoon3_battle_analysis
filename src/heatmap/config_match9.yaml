@@ -10,10 +10,13 @@ video:
   duration_seconds: 308.07
 
 sampling:
-  # First useful overhead-map segment seen in manual probes.
-  start_seconds: 20.0
+  # Full playable overhead-map window: the GO overlay clears at about 16 s,
+  # and the replay enters the result sequence shortly after 160 s.
+  start_seconds: 16.0
   stop_seconds: 160.0
-  sample_fps: 1.0
+  # Five map observations per second keep death-adjacent positions and fast
+  # movement visible without requiring full 60 FPS processing.
+  sample_fps: 5.0
 
 map_view:
   # First pass uses source-video pixel coordinates. Later goals may add
@@ -49,12 +52,12 @@ stage_coordinates:
   allow_roi_fallback: true
 
 frame_quality:
-  # These thresholds are initial hints only. Goal 2 should verify them with
-  # debug output before relying on them.
-  min_ink_ratio: 0.06
+  # The first playable seconds have little ink but already contain useful
+  # player markers, so validity cannot require a mature paint footprint.
+  min_ink_ratio: 0.01
   max_large_overlay_ratio: 0.35
   invalid_ranges_seconds:
-    - [0.0, 19.9]
+    - [0.0, 15.9]
     - [170.0, 308.1]
 
 teams:
@@ -68,7 +71,69 @@ teams:
         upper: [140, 255, 255]
 
 marker_detection:
-  method: label_guided_color_components
+  # Identity comes from the stable player name, while the emitted coordinate
+  # must also match the downward triangle below it. Tracking starts at 60 s and
+  # runs in both directions so early frames never start from a global guess.
+  method: seeded_name_marker_tracking
+  reference_time_seconds: 60.0
+  template_edge_low: 80
+  template_edge_high: 160
+  template_marker_radius_px: 8
+  template_marker_search_radius_px: 8
+  template_tracked_min_score: 0.10
+  template_reacquire_min_score: 0.42
+  template_marker_tracked_min_score: 0.16
+  template_marker_reacquire_min_score: 0.28
+  template_max_gap_seconds: 2.0
+  template_max_speed_px_per_second: 140
+  template_min_search_gate_px: 45
+  template_collision_distance_px: 26
+  player_templates:
+    - player_id: yellow_player_1
+      team: yellow
+      # HUD order verified by matching the result-screen weapon icon to the
+      # top status bar: 2=black/red shooter, player name しぐれ.
+      track_slot: 2
+      reference_box: [745, 260, 813, 291]
+      reference_marker: [788, 311]
+    - player_id: yellow_player_2
+      team: yellow
+      track_slot: 1
+      reference_box: [648, 335, 747, 369]
+      reference_marker: [696, 376]
+    - player_id: yellow_player_3
+      team: yellow
+      track_slot: 3
+      reference_box: [575, 384, 717, 421]
+      reference_marker: [649, 425]
+    - player_id: yellow_player_4
+      team: yellow
+      track_slot: 4
+      reference_box: [1058, 383, 1232, 421]
+      reference_marker: [1147, 424]
+    - player_id: blue_player_1
+      team: blue
+      # CM-Perii is the fourth blue HUD/result row.
+      track_slot: 4
+      reference_box: [737, 552, 856, 582]
+      reference_marker: [793, 589]
+    - player_id: blue_player_2
+      team: blue
+      # aka-chan is the third blue HUD/result row.
+      track_slot: 3
+      reference_box: [797, 584, 892, 613]
+      reference_marker: [845, 624]
+    - player_id: blue_player_3
+      team: blue
+      # danshari-danshaku is the second blue HUD/result row.
+      track_slot: 2
+      reference_box: [936, 583, 1108, 614]
+      reference_marker: [1019, 625]
+    - player_id: blue_player_4
+      team: blue
+      track_slot: 1
+      reference_box: [915, 716, 984, 743]
+      reference_marker: [949, 749]
   min_component_area: 8
   max_component_area: 900
   min_component_width: 3
@@ -99,6 +164,8 @@ point_cleaning:
   max_track_step_px: 420
   max_track_speed_px_per_second: 360
   max_track_gap_seconds: 3.0
+  max_matched_gap_seconds: 0.5
+  max_matched_step_px: 120
   prediction_horizon_seconds: 1.0
   min_assignment_gate_px: 45
   assignment_confidence_weight_px: 30
@@ -157,9 +224,17 @@ state_join:
     - weapon_8
 
 event_join:
-  event_csv: outputs/heatmap_match9/events_template.csv
+  event_csv: outputs/heatmap_match9/death_events.csv
   time_window_seconds: 2.0
   segment_gap_seconds: 5.0
+
+death_events:
+  # Current the_model.pt: alive=0, dead=3, special=20. Legacy dead=1 is
+  # retained by the library default for older analysis CSV files.
+  dead_state_ids: [3]
+  alive_state_ids: [0, 20]
+  min_dead_frames: 1
+  include_initial_dead: false
 
 identity_tracking:
   method: team_slot_weapon_hint
@@ -167,9 +242,17 @@ identity_tracking:
   route_line_thickness_px: 2
   route_point_radius_px: 4
   base_identity_confidence: 0.30
+  identified_base_confidence: 0.70
   matched_bonus: 0.12
   weapon_hint_bonus: 0.08
   jump_reset_penalty: 0.15
+  # Verified for match_9 by matching each result-screen name/weapon row to the
+  # same weapon icon in the top HUD. This is replay-specific evidence.
+  slot_mapping_verified: true
+  death_pre_window_seconds: 3.0
+  death_post_window_seconds: 2.0
+  death_max_point_delta_seconds: 2.0
+  death_ambiguity_margin: 0.12
 
 outputs:
   frames_dir: outputs/heatmap_match9/frames
@@ -195,6 +278,12 @@ outputs:
   player_tracks_csv: outputs/heatmap_match9/player_tracks.csv
   player_tracks_stage_csv: outputs/heatmap_match9/player_tracks_stage.csv
   rendered_stage_dir: outputs/heatmap_match9/rendered_stage
+  death_events_csv: outputs/heatmap_match9/death_events.csv
+  death_events_json: outputs/heatmap_match9/death_events.json
+  death_positions_csv: outputs/heatmap_match9/death_positions.csv
+  death_position_report_json: outputs/heatmap_match9/death_position_report.json
+  routes_with_deaths: outputs/heatmap_match9/rendered/routes_with_deaths.png
+  stage_routes_with_deaths: outputs/heatmap_match9/rendered_stage/stage_routes_with_deaths.png
   player_track_gaps_csv: outputs/heatmap_match9/player_track_gaps.csv
   player_routes_dir: outputs/heatmap_match9/player_routes
   identity_report_csv: outputs/heatmap_match9/identity_report.csv

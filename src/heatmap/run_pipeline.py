@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from src.heatmap.color_calibration import resolve_config
+from src.heatmap.death_positions import run_death_position_pipeline
 from src.heatmap.extract_frames import ROOT, load_config, resolve_path
 from src.heatmap.render_stage_space import render_stage_heatmaps
 from src.heatmap.stage_coordinates import (
@@ -217,6 +218,7 @@ def write_run_manifest(
     cleaned_paths: List[str],
     stage_normalization: Optional[Dict[str, Any]] = None,
     stage_rendering: Optional[Dict[str, Any]] = None,
+    death_positions: Optional[Dict[str, Any]] = None,
 ) -> Path:
     output_dir = resolve_path(config["match"]["output_dir"])
     manifest_path = output_dir / "run_manifest.json"
@@ -230,6 +232,10 @@ def write_run_manifest(
         extra_artifacts["stage_tracks"] = resolve_path(stage_normalization["output"])
     if stage_rendering and stage_rendering.get("output_dir"):
         extra_artifacts["stage_rendering"] = resolve_path(stage_rendering["output_dir"])
+    if death_positions:
+        for key in ("event_csv", "event_json", "position_csv", "report_json"):
+            if death_positions.get(key):
+                extra_artifacts[f"death_positions.{key}"] = resolve_path(death_positions[key])
     manifest = {
         "schema_version": 1,
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
@@ -254,6 +260,7 @@ def write_run_manifest(
         "cleaned_paths": cleaned_paths,
         "stage_normalization": stage_normalization or {"status": "no_asset", "method": "", "output": ""},
         "stage_rendering": stage_rendering or {"status": "skipped", "rendered": {}},
+        "death_positions": death_positions or {"status": "empty", "event_count": 0},
         "artifacts": artifact_status(config, extra_artifacts),
     }
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -267,6 +274,7 @@ def write_report(
     *,
     stage_normalization: Optional[Dict[str, Any]] = None,
     stage_rendering: Optional[Dict[str, Any]] = None,
+    death_positions: Optional[Dict[str, Any]] = None,
 ) -> Path:
     outputs = config["outputs"]
     output_dir = resolve_path(config["match"]["output_dir"])
@@ -379,6 +387,8 @@ def write_report(
                 "track_coverage_ratio",
                 "mean_tracking_confidence",
                 "track_status_matched",
+                "track_status_jump_reset",
+                "track_status_new",
                 "track_status_reacquired",
             ],
         )
@@ -391,8 +401,44 @@ def write_report(
     lines.extend(metric_lines("Rendering", render, render_metric_keys))
     lines.append("")
     lines.extend(metric_lines("Events", event_join, ["event_rows", "points_with_nearby_events", "events_with_nearby_points", "segments"]))
+    death_info = death_positions or {"status": "empty", "event_count": 0}
+    reason_counts = death_info.get("reason_counts", {})
+    reason_summary = ", ".join(f"{reason}={count}" for reason, count in sorted(reason_counts.items()))
+    lines.extend(
+        [
+            "",
+            "### Death Positions",
+            f"- status: `{death_info.get('status', '')}`",
+            f"- death events: {death_info.get('event_count', 0)}",
+            f"- located: {death_info.get('located_count', 0)}",
+            f"- ambiguous: {death_info.get('ambiguous_count', 0)}",
+            f"- unknown: {death_info.get('unknown_count', 0)}",
+            f"- location reasons: `{reason_summary or 'none'}`",
+            artifact_line("death events", resolve_path(outputs["death_events_csv"])),
+            artifact_line("death positions", resolve_path(outputs["death_positions_csv"])),
+            artifact_line("routes with deaths", resolve_path(outputs["routes_with_deaths"])),
+            artifact_line("stage routes with deaths", resolve_path(outputs["stage_routes_with_deaths"])),
+        ]
+    )
     lines.append("")
-    lines.extend(metric_lines("Experimental Identity", identity, ["player_track_rows", "gap_rows", "route_images", "identity_warning"]))
+    lines.extend(
+        metric_lines(
+            "Experimental Identity",
+            identity,
+            [
+                "player_track_rows",
+                "gap_rows",
+                "gap_ratio",
+                "large_step_rows",
+                "matched_large_step_rows",
+                "reacquired_large_step_rows",
+                "max_matched_step_px",
+                "max_reacquired_step_px",
+                "route_images",
+                "identity_warning",
+            ],
+        )
+    )
     stage_info = stage_normalization or {"status": "no_asset"}
     lines.extend(["", "### Stage Normalization", ""])
     if stage_info.get("status") == "ready":
@@ -430,15 +476,32 @@ def write_report(
                 artifact_line("normalized combined heatmap", stage_render_dir(config) / "stage_heatmap_combined.png"),
             ]
         )
+    marker_method = str(config.get("marker_detection", {}).get("method", ""))
+    marker_limit_line = (
+        "- Marker positions require both replay-specific player-name and triangle-template matches; occlusion creates explicit route gaps, and another replay needs new reference seeds."
+        if marker_method == "seeded_name_marker_tracking"
+        else "- Marker detection uses color components near map labels; some points can still land on nearby ink patches."
+    )
+    slot_mapping_verified = bool(config.get("identity_tracking", {}).get("slot_mapping_verified", False))
+    player_identity_limit_line = (
+        "- `player_tracks.csv` contains eight stable per-match identities whose HUD slots were verified from match_9 result-screen and status-bar weapon icons; another replay must be verified independently."
+        if slot_mapping_verified
+        else "- `player_tracks.csv` contains eight stable per-match identities seeded from the reference frame; their numeric suffixes are not verified HUD weapon-slot mappings."
+    )
+    death_limit_line = (
+        "- Death positions use the verified HUD slot and the latest visible point for that identity; gaps or weak visual matches remain explicit unknowns rather than interpolated locations."
+        if slot_mapping_verified
+        else "- Death positions use one-to-one disappearance assignment while HUD-slot binding is unverified; inspect ambiguous and unknown rows before relying on them."
+    )
     lines.extend(
         [
             "",
             "## Known Limitations",
             "",
-            "- Marker detection is a lightweight MVP based on color components near map labels; some points can still land on nearby ink patches.",
+            marker_limit_line,
             "- `team_routes.png` shows team-level local movement segments, not verified player paths.",
-            "- `player_tracks.csv` contains experimental slot labels such as `<team>_slot_1`; these are not confirmed player identities.",
-            "- Event outputs are empty until a real external kill/death event CSV is supplied.",
+            player_identity_limit_line,
+            death_limit_line,
             stage_limit_line,
             "",
             "## Embedded Preview",
@@ -452,7 +515,16 @@ def write_report(
         ]
     )
     if stage_render_info.get("status") == "ready":
-        lines.extend(["![normalized routes](rendered_stage/stage_routes.png)", ""])
+        lines.extend(
+            [
+                "![normalized routes](rendered_stage/stage_routes.png)",
+                "",
+                "![routes with deaths](rendered/routes_with_deaths.png)",
+                "",
+                "![normalized routes with deaths](rendered_stage/stage_routes_with_deaths.png)",
+                "",
+            ]
+        )
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(lines), encoding="utf-8")
@@ -465,10 +537,6 @@ def run_pipeline(args: argparse.Namespace, config: Dict, config_path: Path) -> N
         "extract frames",
         module_command("src.heatmap.extract_frames", ["--config", config_path, "--contact-limit", str(args.contact_limit)]),
     )
-    run_command("build map mask", module_command("src.heatmap.build_map_mask", ["--config", config_path]))
-    run_command("detect markers", module_command("src.heatmap.detect_markers", ["--config", config_path]))
-    run_command("clean points", module_command("src.heatmap.clean_points", ["--config", config_path]))
-
     if not args.skip_ui_analysis:
         run_command(
             "run UI state analysis",
@@ -492,13 +560,12 @@ def run_pipeline(args: argparse.Namespace, config: Dict, config_path: Path) -> N
                 ],
             ),
         )
+    run_command("build map mask", module_command("src.heatmap.build_map_mask", ["--config", config_path]))
+    run_command("detect markers", module_command("src.heatmap.detect_markers", ["--config", config_path]))
+    run_command("clean points", module_command("src.heatmap.clean_points", ["--config", config_path]))
     run_command("join UI state", module_command("src.heatmap.join_state", ["--config", config_path]))
     run_command("render heatmaps", module_command("src.heatmap.render_heatmaps", ["--config", config_path]))
 
-    event_args = ["--config", config_path]
-    if args.event_csv:
-        event_args.extend(["--events", args.event_csv])
-    run_command("join events", module_command("src.heatmap.join_events", event_args))
     run_command("infer experimental player tracks", module_command("src.heatmap.infer_player_tracks", ["--config", config_path]))
 
 
@@ -547,11 +614,28 @@ def main() -> int:
         print(f"stage normalization: {stage_normalization.get('status', 'no_asset')}")
     stage_rendering = run_stage_rendering(config, stage_normalization)
     print(f"stage rendering: {stage_rendering.get('status', 'skipped')}")
+    death_positions = run_death_position_pipeline(config, args.event_csv)
+    print(
+        "death positions: "
+        f"events={death_positions.get('event_count', 0)} "
+        f"located={death_positions.get('located_count', 0)} "
+        f"ambiguous={death_positions.get('ambiguous_count', 0)} "
+        f"unknown={death_positions.get('unknown_count', 0)}"
+    )
+    if not args.only_report:
+        run_command(
+            "join events",
+            module_command(
+                "src.heatmap.join_events",
+                ["--config", str(resolved_config_path), "--events", death_positions["event_csv"]],
+            ),
+        )
     report_path = write_report(
         config,
         command_hint,
         stage_normalization=stage_normalization,
         stage_rendering=stage_rendering,
+        death_positions=death_positions,
     )
     manifest_path = write_run_manifest(
         config,
@@ -564,6 +648,7 @@ def main() -> int:
         cleaned_paths=cleaned_paths,
         stage_normalization=stage_normalization,
         stage_rendering=stage_rendering,
+        death_positions=death_positions,
     )
     print(f"\nreport: {report_path}")
     print(f"manifest: {manifest_path}")

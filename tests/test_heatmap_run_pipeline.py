@@ -5,10 +5,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.heatmap.run_pipeline import (
     clean_generated_outputs,
     configured_output_paths,
+    run_pipeline,
     run_stage_normalization,
     run_stage_rendering,
     write_run_manifest,
@@ -17,6 +19,25 @@ from src.heatmap.stage_coordinates import discover_control_point_asset
 
 
 class HeatmapRunPipelineTests(unittest.TestCase):
+    def test_ui_state_is_generated_before_marker_detection(self) -> None:
+        args = argparse.Namespace(
+            contact_limit=24,
+            skip_ui_analysis=False,
+            device="cpu",
+            warmup_frames=10,
+        )
+        config = {
+            "match": {"input_video": "footages/test.mp4"},
+            "sampling": {"start_seconds": 1.0, "stop_seconds": 2.0, "sample_fps": 5.0},
+            "state_join": {"state_csv": "outputs/test/ui_state.csv"},
+        }
+
+        with patch("src.heatmap.run_pipeline.run_command") as run:
+            run_pipeline(args, config, Path("outputs/test/resolved_config.yaml"))
+
+        labels = [call.args[0] for call in run.call_args_list]
+        self.assertLess(labels.index("run UI state analysis"), labels.index("detect markers"))
+
     def test_clean_generated_outputs_only_removes_paths_under_output_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

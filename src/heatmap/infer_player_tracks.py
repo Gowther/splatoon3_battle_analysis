@@ -99,6 +99,8 @@ def identity_confidence(row: Row, weapon_hint: str, config: Dict) -> float:
         score += 0.25 * float(row.get("tracking_confidence", 0.0))
     except (TypeError, ValueError):
         pass
+    if row.get("player_id"):
+        score = max(score, float(identity.get("identified_base_confidence", 0.70)))
     return round(max(0.0, min(1.0, score)), 3)
 
 
@@ -106,16 +108,27 @@ def build_player_tracks(config: Dict) -> Tuple[List[Dict[str, object]], List[Dic
     track_rows = read_csv(resolve_path(config["outputs"]["tracks_csv"]))
     weapon_hints = weapon_hints_by_team(config)
     method = config["identity_tracking"]["method"]
+    slot_mapping_verified = bool(config["identity_tracking"].get("slot_mapping_verified", False))
     player_rows: List[Dict[str, object]] = []
     gap_rows: List[Dict[str, object]] = []
 
     for row in track_rows:
         team = row.get("team", "")
         slot = row.get("track_slot", "")
-        player_id = f"{team}_slot_{slot}"
+        identified_player = row.get("player_id", "")
+        player_id = identified_player or f"{team}_slot_{slot}"
         weapon_hint = weapon_hints.get(team, {}).get(slot, "")
         status = row.get("track_status", "")
-        note = "experimental_slot_not_verified_player_identity"
+        if identified_player:
+            row_method = "player_name_template"
+            note = (
+                "stable_name_template_identity;hud_slot_mapping_verified"
+                if slot_mapping_verified
+                else "stable_name_template_identity;hud_slot_mapping_unverified"
+            )
+        else:
+            row_method = method
+            note = "experimental_slot_not_verified_player_identity"
         output = {
             "match_id": row.get("match_id", ""),
             "time": row.get("time", ""),
@@ -134,7 +147,7 @@ def build_player_tracks(config: Dict) -> Tuple[List[Dict[str, object]], List[Dic
             "time_delta": row.get("time_delta", ""),
             "prediction_error": row.get("prediction_error", ""),
             "observation_count": row.get("observation_count", ""),
-            "identity_method": method,
+            "identity_method": row_method,
             "identity_note": note,
             "frame_path": row.get("frame_path", ""),
         }
@@ -229,17 +242,45 @@ def render_player_routes(config: Dict, player_rows: Sequence[Dict[str, object]])
     return paths
 
 
-def report_rows(player_rows: Sequence[Dict[str, object]], gap_rows: Sequence[Dict[str, object]], route_paths: Sequence[Path]) -> List[Dict[str, object]]:
+def report_rows(
+    player_rows: Sequence[Dict[str, object]],
+    gap_rows: Sequence[Dict[str, object]],
+    route_paths: Sequence[Path],
+    *,
+    route_max_draw_step_px: float = 120.0,
+) -> List[Dict[str, object]]:
+    verified = any("hud_slot_mapping_verified" in str(row.get("identity_note", "")) for row in player_rows)
+    status_counts = Counter(str(row.get("track_status", "")) for row in player_rows)
+    step_values = [
+        (str(row.get("track_status", "")), float(row["step_distance"]))
+        for row in player_rows
+        if row.get("step_distance") not in (None, "")
+    ]
+    matched_steps = [value for status, value in step_values if status == "matched"]
+    reacquired_steps = [value for status, value in step_values if status == "reacquired"]
+    large_step_rows = sum(value > route_max_draw_step_px for _, value in step_values)
+    matched_large_step_rows = sum(value > route_max_draw_step_px for value in matched_steps)
+    reacquired_large_step_rows = sum(value > route_max_draw_step_px for value in reacquired_steps)
     rows: List[Dict[str, object]] = [
         {"metric": "player_track_rows", "value": len(player_rows)},
         {"metric": "gap_rows", "value": len(gap_rows)},
+        {"metric": "gap_ratio", "value": round(len(gap_rows) / len(player_rows), 4) if player_rows else 0.0},
         {"metric": "route_images", "value": len(route_paths)},
+        {"metric": "route_step_threshold_px", "value": route_max_draw_step_px},
+        {"metric": "large_step_rows", "value": large_step_rows},
+        {"metric": "matched_large_step_rows", "value": matched_large_step_rows},
+        {"metric": "reacquired_large_step_rows", "value": reacquired_large_step_rows},
+        {"metric": "max_matched_step_px", "value": round(max(matched_steps), 2) if matched_steps else 0.0},
+        {"metric": "max_reacquired_step_px", "value": round(max(reacquired_steps), 2) if reacquired_steps else 0.0},
         {"metric": "identity_method", "value": "team_slot_weapon_hint"},
-        {"metric": "identity_warning", "value": "slot labels are not verified player identities"},
+        {
+            "metric": "identity_warning",
+            "value": "HUD slot mapping verified for this replay" if verified else "slot labels are not verified player identities",
+        },
     ]
     for player_id, count in sorted(Counter(str(row["player_id"]) for row in player_rows).items()):
         rows.append({"metric": f"rows_{player_id}", "value": count})
-    for status, count in sorted(Counter(str(row["track_status"]) for row in player_rows).items()):
+    for status, count in sorted(status_counts.items()):
         rows.append({"metric": f"track_status_{status}", "value": count})
     return rows
 
@@ -251,7 +292,16 @@ def main() -> int:
     route_paths = render_player_routes(config, player_rows)
     write_csv(resolve_path(config["outputs"]["player_tracks_csv"]), PLAYER_TRACK_FIELDS, player_rows)
     write_csv(resolve_path(config["outputs"]["player_track_gaps_csv"]), GAP_FIELDS, gap_rows)
-    write_csv(resolve_path(config["outputs"]["identity_report_csv"]), ["metric", "value"], report_rows(player_rows, gap_rows, route_paths))
+    write_csv(
+        resolve_path(config["outputs"]["identity_report_csv"]),
+        ["metric", "value"],
+        report_rows(
+            player_rows,
+            gap_rows,
+            route_paths,
+            route_max_draw_step_px=float(config["identity_tracking"].get("route_max_draw_step_px", 120.0)),
+        ),
+    )
     print(f"player track rows: {len(player_rows)}")
     print(f"gap rows: {len(gap_rows)}")
     print(f"route images: {len(route_paths)}")

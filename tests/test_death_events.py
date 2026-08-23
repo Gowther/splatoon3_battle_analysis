@@ -22,6 +22,8 @@ class DeathEventTests(unittest.TestCase):
         self.assertEqual(normalize_state("dead"), "dead")
         self.assertEqual(normalize_state("0"), "alive")
         self.assertEqual(normalize_state("14"), "alive")
+        self.assertEqual(normalize_state("20"), "alive")
+        self.assertEqual(normalize_state("3"), "dead")
         self.assertEqual(normalize_state("special"), "alive")
         self.assertEqual(normalize_state("8"), "unknown")
 
@@ -104,6 +106,19 @@ class DeathEventTests(unittest.TestCase):
         self.assertEqual(csv_rows[0]["victim"], "team_2_slot_1")
         self.assertEqual(list(csv_rows[0].keys()), DEATH_EVENT_FIELDS)
         self.assertEqual(payload["events"][0]["time"], 2.0)
+
+    def test_team_names_can_be_bound_to_map_team_labels(self) -> None:
+        events = extract_death_events(
+            [
+                {"elapsed_time": "1.0", "player_state_1": "0"},
+                {"elapsed_time": "2.0", "player_state_1": "3"},
+            ],
+            match_id="match_named",
+            team_names=("yellow", "blue"),
+        )
+
+        self.assertEqual(events[0].team, "yellow")
+        self.assertEqual(events[0].victim, "yellow_slot_1")
 
 
 if __name__ == "__main__":

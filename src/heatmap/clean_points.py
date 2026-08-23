@@ -40,6 +40,7 @@ CLEAN_FIELDNAMES = [
     "frame_index",
     "team",
     "player_id",
+    "track_slot_hint",
     "x",
     "y",
     "confidence",
@@ -54,6 +55,7 @@ REJECT_FIELDNAMES = [
     "frame_index",
     "team",
     "player_id",
+    "track_slot_hint",
     "x",
     "y",
     "confidence",
@@ -70,6 +72,7 @@ TRACK_FIELDNAMES = [
     "frame_index",
     "team",
     "track_slot",
+    "player_id",
     "x",
     "y",
     "confidence",
@@ -79,6 +82,7 @@ TRACK_FIELDNAMES = [
     "prediction_error",
     "tracking_confidence",
     "observation_count",
+    "source",
     "frame_path",
 ]
 
@@ -127,6 +131,7 @@ def parse_point(row: Dict[str, str], teams: Sequence[str]) -> Tuple[Optional[Poi
         "frame_index": row.get("frame_index", ""),
         "team": team,
         "player_id": row.get("player_id", ""),
+        "track_slot_hint": row.get("track_slot_hint", ""),
         "x": round(x, 2),
         "y": round(y, 2),
         "confidence": round(confidence, 4),
@@ -181,7 +186,15 @@ def clean_raw_points(config: Dict) -> Tuple[List[Point], List[Dict[str, object]]
     for group_key in sorted(grouped, key=lambda item: (float(item[0]), item[2])):
         kept: List[Point] = []
         for point in sorted(grouped[group_key], key=lambda row: float(row["confidence"]), reverse=True):
-            if any(point_distance(point, other) < merge_distance for other in kept):
+            if any(
+                point_distance(point, other) < merge_distance
+                and (
+                    not point.get("player_id")
+                    or not other.get("player_id")
+                    or point.get("player_id") == other.get("player_id")
+                )
+                for other in kept
+            ):
                 rejected.append(reject_row(point, "duplicate_nearby_point"))
                 continue
             if len(kept) >= max_per_team:
@@ -201,6 +214,29 @@ def group_points_by_frame(clean_points: Sequence[Point]) -> DefaultDict[Tuple[st
     for point in clean_points:
         grouped[(str(point["time"]), str(point["frame_index"]), str(point["team"]))].append(point)
     return grouped
+
+
+def classify_track_status(
+    previous: Optional[TrackState],
+    time_delta: Optional[float],
+    distance: Optional[float],
+    tracking_config: Dict,
+) -> str:
+    """Classify continuity before a row is allowed to count as matched."""
+    if previous is None:
+        return "new"
+    max_gap = float(tracking_config.get("max_track_gap_seconds", 3.0))
+    if time_delta is None or not 0.0 < time_delta <= max_gap:
+        return "reacquired"
+    max_matched_gap = float(tracking_config.get("max_matched_gap_seconds", max_gap))
+    if time_delta > max_matched_gap:
+        return "reacquired"
+    max_matched_step = float(
+        tracking_config.get("max_matched_step_px", tracking_config.get("max_track_step_px", float("inf")))
+    )
+    if distance is not None and distance > max_matched_step:
+        return "jump_reset"
+    return "matched"
 
 
 def assign_tracks_for_team(
@@ -227,10 +263,35 @@ def assign_tracks_for_team(
     velocity_alpha = float(tracking_config.get("velocity_smoothing_alpha", 0.65))
     min_gate = float(tracking_config.get("min_assignment_gate_px", 45.0))
 
+    # A calibrated name template identifies the player before spatial tracking.
+    # Bind those observations to their configured slot and use motion only as a
+    # confidence signal. Anonymous detections still use global assignment below.
+    for candidate_index, point in enumerate(candidates):
+        try:
+            slot = int(point.get("track_slot_hint", ""))
+        except (TypeError, ValueError):
+            continue
+        if slot not in states or slot in assigned_slots:
+            continue
+        previous = states[slot]
+        if previous is None:
+            assigned_slots[slot] = (candidate_index, "new", None, None, None)
+        else:
+            time_delta = time_value - previous.time
+            distance = math.hypot(float(point["x"]) - previous.x, float(point["y"]) - previous.y)
+            predicted_x, predicted_y = previous.predicted_position(time_value, prediction_horizon)
+            prediction_error = math.hypot(
+                float(point["x"]) - predicted_x,
+                float(point["y"]) - predicted_y,
+            )
+            status = classify_track_status(previous, time_delta, distance, tracking_config)
+            assigned_slots[slot] = (candidate_index, status, distance, time_delta, prediction_error)
+        assigned_candidate_indexes.add(candidate_index)
+
     active_slots = [
         slot
         for slot, state in sorted(states.items())
-        if state is not None and 0.0 < time_value - state.time <= max_gap
+        if slot not in assigned_slots and state is not None and 0.0 < time_value - state.time <= max_gap
     ]
     if active_slots and candidates:
         invalid_cost = 1e9
@@ -243,6 +304,8 @@ def assign_tracks_for_team(
             predicted_x, predicted_y = state.predicted_position(time_value, prediction_horizon)
             gate = max(min_gate, max_speed * time_delta)
             for candidate_index, point in enumerate(candidates):
+                if candidate_index in assigned_candidate_indexes:
+                    continue
                 prediction_error = math.hypot(
                     float(point["x"]) - predicted_x,
                     float(point["y"]) - predicted_y,
@@ -263,7 +326,14 @@ def assign_tracks_for_team(
                 continue
             slot = active_slots[slot_index]
             step_distance, time_delta, prediction_error = metadata[(slot_index, candidate_index)]
-            assigned_slots[slot] = (candidate_index, "matched", step_distance, time_delta, prediction_error)
+            previous = states[slot]
+            assigned_slots[slot] = (
+                candidate_index,
+                classify_track_status(previous, time_delta, step_distance, tracking_config),
+                step_distance,
+                time_delta,
+                prediction_error,
+            )
             assigned_candidate_indexes.add(candidate_index)
 
     for index, point in enumerate(candidates):
@@ -328,6 +398,7 @@ def assign_tracks_for_team(
                 "frame_index": point["frame_index"],
                 "team": point["team"],
                 "track_slot": slot,
+                "player_id": point.get("player_id", ""),
                 "x": point["x"],
                 "y": point["y"],
                 "confidence": point["confidence"],
@@ -337,6 +408,7 @@ def assign_tracks_for_team(
                 "prediction_error": "" if prediction_error is None else round(prediction_error, 2),
                 "tracking_confidence": round(max(0.0, min(1.0, tracking_confidence)), 4),
                 "observation_count": observations,
+                "source": point.get("source", ""),
                 "frame_path": point["frame_path"],
             }
         )
@@ -392,7 +464,10 @@ def metric_rows(
         rows.append({"metric": f"clean_team_{team}", "value": count})
     for reason, count in sorted(Counter(str(row["reject_reason"]) for row in rejected).items()):
         rows.append({"metric": f"rejected_{reason}", "value": count})
-    for status, count in sorted(Counter(str(row["track_status"]) for row in tracks).items()):
+    status_counts = Counter(str(row["track_status"]) for row in tracks)
+    for status in ("matched", "jump_reset", "new", "reacquired"):
+        rows.append({"metric": f"track_status_{status}", "value": status_counts.pop(status, 0)})
+    for status, count in sorted(status_counts.items()):
         rows.append({"metric": f"track_status_{status}", "value": count})
 
     frame_counts = Counter(str(point["time"]) for point in clean_points)

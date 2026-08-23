@@ -85,6 +85,8 @@ point_cleaning:
   max_track_step_px: 420
   max_track_speed_px_per_second: 360
   max_track_gap_seconds: 3.0
+  max_matched_gap_seconds: 0.5
+  max_matched_step_px: 120
   prediction_horizon_seconds: 1.0
   min_assignment_gate_px: 45
   assignment_confidence_weight_px: 30
@@ -143,9 +145,15 @@ state_join:
     - weapon_8
 
 event_join:
-  event_csv: "{output_dir}/events_template.csv"
+  event_csv: "{output_dir}/death_events.csv"
   time_window_seconds: 2.0
   segment_gap_seconds: 5.0
+
+death_events:
+  dead_state_ids: [1, 3]
+  alive_state_ids: [0, 14, 20]
+  min_dead_frames: 1
+  include_initial_dead: false
 
 identity_tracking:
   method: team_slot_weapon_hint
@@ -156,6 +164,11 @@ identity_tracking:
   matched_bonus: 0.12
   weapon_hint_bonus: 0.08
   jump_reset_penalty: 0.15
+  slot_mapping_verified: false
+  death_pre_window_seconds: 3.0
+  death_post_window_seconds: 2.0
+  death_max_point_delta_seconds: 2.0
+  death_ambiguity_margin: 0.12
 
 outputs:
   frames_dir: "{output_dir}/frames"
@@ -181,6 +194,12 @@ outputs:
   player_tracks_csv: "{output_dir}/player_tracks.csv"
   player_tracks_stage_csv: "{output_dir}/player_tracks_stage.csv"
   rendered_stage_dir: "{output_dir}/rendered_stage"
+  death_events_csv: "{output_dir}/death_events.csv"
+  death_events_json: "{output_dir}/death_events.json"
+  death_positions_csv: "{output_dir}/death_positions.csv"
+  death_position_report_json: "{output_dir}/death_position_report.json"
+  routes_with_deaths: "{output_dir}/rendered/routes_with_deaths.png"
+  stage_routes_with_deaths: "{output_dir}/rendered_stage/stage_routes_with_deaths.png"
   player_track_gaps_csv: "{output_dir}/player_track_gaps.csv"
   player_routes_dir: "{output_dir}/player_routes"
   identity_report_csv: "{output_dir}/identity_report.csv"

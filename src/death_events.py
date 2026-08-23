@@ -12,8 +12,10 @@ from typing import Any, Iterable, Mapping, Sequence
 PLAYER_STATE_FIELDS = tuple(f"player_state_{index}" for index in range(1, 9))
 WEAPON_FIELDS = tuple(f"weapon_{index}" for index in range(1, 9))
 
-DEFAULT_DEAD_STATE_IDS = ("1",)
-DEFAULT_ALIVE_STATE_IDS = ("0", "14")
+# Older exports used class id 1; the current detector checkpoint maps `dead`
+# to 3 and `special` to 20. Keep both dead ids for backwards compatibility.
+DEFAULT_DEAD_STATE_IDS = ("1", "3")
+DEFAULT_ALIVE_STATE_IDS = ("0", "14", "20")
 
 DEAD_STATE_NAMES = {"dead", "death", "splatted", "splat", "map_player_dead"}
 NON_DEAD_STATE_NAMES = {"alive", "live", "living", "special"}
@@ -129,7 +131,9 @@ def format_seconds(value: float) -> str:
     return f"{value:.3f}"
 
 
-def team_for_slot(slot: int) -> str:
+def team_for_slot(slot: int, team_names: Sequence[str] | None = None) -> str:
+    if team_names and len(team_names) >= 2:
+        return str(team_names[0] if slot <= 4 else team_names[1])
     return "team_1" if slot <= 4 else "team_2"
 
 
@@ -137,8 +141,8 @@ def team_slot_for_slot(slot: int) -> int:
     return ((slot - 1) % 4) + 1
 
 
-def player_id_for_slot(slot: int) -> str:
-    return f"{team_for_slot(slot)}_slot_{team_slot_for_slot(slot)}"
+def player_id_for_slot(slot: int, team_names: Sequence[str] | None = None) -> str:
+    return f"{team_for_slot(slot, team_names)}_slot_{team_slot_for_slot(slot)}"
 
 
 def safe_identifier(value: str) -> str:
@@ -193,6 +197,7 @@ def extract_death_events(
     clip_after: float = 4.0,
     min_dead_frames: int = 1,
     include_initial_dead: bool = False,
+    team_names: Sequence[str] | None = None,
 ) -> list[DeathEvent]:
     timed_rows = _timed_rows(rows, dead_state_ids, alive_state_ids)
     run_lengths = _dead_run_lengths(timed_rows)
@@ -217,8 +222,8 @@ def extract_death_events(
                 and run_lengths[row_index][slot] >= min_run
                 and (include_initial_dead or previous == "alive")
             ):
-                team = team_for_slot(slot)
-                player_id = player_id_for_slot(slot)
+                team = team_for_slot(slot, team_names)
+                player_id = player_id_for_slot(slot, team_names)
                 weapon = str(row.get(WEAPON_FIELDS[slot - 1], "")).strip()
                 run_bonus = min(0.2, 0.05 * (run_lengths[row_index][slot] - 1))
                 event_index = len(events) + 1
@@ -301,12 +306,14 @@ def build_death_event_report(
     events: Sequence[DeathEvent] | None = None,
     dead_state_ids: Sequence[Any] = DEFAULT_DEAD_STATE_IDS,
     alive_state_ids: Sequence[Any] = DEFAULT_ALIVE_STATE_IDS,
+    team_names: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     resolved_events = list(events) if events is not None else extract_death_events(
         rows,
         match_id=match_id,
         dead_state_ids=dead_state_ids,
         alive_state_ids=alive_state_ids,
+        team_names=team_names,
     )
     timed_row_count = sum(1 for row in rows if parse_time(row) is not None)
     slots = sorted({event.victim_slot for event in resolved_events})
