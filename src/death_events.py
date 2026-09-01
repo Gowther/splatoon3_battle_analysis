@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from src.csv_contracts import DEATH_EVENT_CSV_CONTRACT
 
 PLAYER_STATE_FIELDS = tuple(f"player_state_{index}" for index in range(1, 9))
 WEAPON_FIELDS = tuple(f"weapon_{index}" for index in range(1, 9))
@@ -20,30 +21,7 @@ DEFAULT_ALIVE_STATE_IDS = ("0", "14", "20")
 DEAD_STATE_NAMES = {"dead", "death", "splatted", "splat", "map_player_dead"}
 NON_DEAD_STATE_NAMES = {"alive", "live", "living", "special"}
 
-DEATH_EVENT_FIELDS = [
-    "event_id",
-    "match_id",
-    "time",
-    "event",
-    "team",
-    "player",
-    "killer",
-    "victim",
-    "clip_path",
-    "segment_id",
-    "victim_slot",
-    "victim_weapon",
-    "killer_slot",
-    "killer_weapon",
-    "cause_weapon",
-    "cause_text",
-    "confidence",
-    "source",
-    "evidence",
-    "clip_start",
-    "clip_end",
-    "notes",
-]
+DEATH_EVENT_FIELDS = list(DEATH_EVENT_CSV_CONTRACT.fields)
 
 
 @dataclass(frozen=True)

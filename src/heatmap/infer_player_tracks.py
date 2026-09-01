@@ -8,6 +8,7 @@ from typing import DefaultDict, Dict, Iterable, List, Sequence, Tuple
 
 import cv2
 
+from src.csv_contracts import PLAYER_TRACK_CSV_CONTRACT, TRACK_GAP_CSV_CONTRACT
 from src.heatmap.detect_markers import load_mask
 from src.heatmap.extract_frames import load_config, resolve_path
 from src.heatmap.render_heatmaps import prepare_render_base, read_video_frame, save_image, team_display_color
@@ -16,40 +17,8 @@ from src.heatmap.render_heatmaps import prepare_render_base, read_video_frame, s
 Row = Dict[str, str]
 
 
-PLAYER_TRACK_FIELDS = [
-    "match_id",
-    "time",
-    "frame_index",
-    "team",
-    "track_slot",
-    "player_id",
-    "weapon_hint",
-    "x",
-    "y",
-    "confidence",
-    "identity_confidence",
-    "tracking_confidence",
-    "track_status",
-    "step_distance",
-    "time_delta",
-    "prediction_error",
-    "observation_count",
-    "identity_method",
-    "identity_note",
-    "frame_path",
-]
-
-GAP_FIELDS = [
-    "match_id",
-    "time",
-    "frame_index",
-    "team",
-    "track_slot",
-    "player_id",
-    "track_status",
-    "step_distance",
-    "note",
-]
+PLAYER_TRACK_FIELDS = list(PLAYER_TRACK_CSV_CONTRACT.fields)
+GAP_FIELDS = list(TRACK_GAP_CSV_CONTRACT.fields)
 
 
 def parse_args() -> argparse.Namespace:

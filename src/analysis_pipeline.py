@@ -12,6 +12,7 @@ from src.analysis_preview import PreviewSaveState, maybe_save_preview
 from src.analysis_runtime import AnalysisRunResult, preview_dir_from_arg
 from src.analysis_warmup import WeaponWarmupState, update_weapon_warmup
 from src.core.paths import ROOT, model_path
+from src.csv_contracts import ANALYSIS_CSV_CONTRACT
 from src.detection import (
     by_class,
     class_ids,
@@ -98,37 +99,38 @@ def analyze_results(
     message_char_conf: float,
 ) -> List[object]:
     arr = detections(results)
-    row: List[object] = [None] * 33
-    row[0] = elapsed_time
-    row[29] = analysis_time
+    values: Dict[str, object] = {
+        "elapsed_time": elapsed_time,
+        "timestamp": analysis_time,
+    }
 
     lamps = player_lamps(arr, ids)
     if len(lamps) == 8:
         for i, lamp in enumerate(lamps):
-            row[1 + i] = int(lamp[5])
+            values[f"player_state_{i + 1}"] = int(lamp[5])
 
     if weapon_list:
         for i, weapon in enumerate(weapon_list[:8]):
-            row[13 + i] = weapon
+            values[f"weapon_{i + 1}"] = weapon
 
-    row[22] = int(len(by_class(arr, ids["asari_object"])))
-    row[23] = int(len(by_class(arr, ids["hoko_canmon"])))
-    row[24] = int(len(by_class(arr, ids["area_object"])))
-    row[25] = int(len(by_class(arr, ids["yagura_kanmon"])))
-    row[27] = bool(len(by_class(arr, ids["player"])) > 0) or None
+    values["asari_count"] = int(len(by_class(arr, ids["asari_object"])))
+    values["hoko_count"] = int(len(by_class(arr, ids["hoko_canmon"])))
+    values["area_count"] = int(len(by_class(arr, ids["area_object"])))
+    values["yagura_count"] = int(len(by_class(arr, ids["yagura_kanmon"])))
+    values["player_detected"] = bool(len(by_class(arr, ids["player"])) > 0) or None
 
     counts = count_numbers(results, arr, ids, ocr_model, count_box_conf, digit_conf)
-    row[9], row[10] = counts
+    values["count_left"], values["count_right"] = counts
 
     penalties = penalty_numbers(results, arr, ids, ocr_model, count_box_conf, digit_conf)
-    row[11], row[12] = penalties
+    values["penalty_left"], values["penalty_right"] = penalties
 
     message_img = first_image_for_class(results, arr, ids["message"], message_box_conf)
     if message_img is not None:
         message = message_text(message_model, message_img, message_char_conf)
-        row[26] = message or None
+        values["message"] = message or None
 
-    return row
+    return list(ANALYSIS_CSV_CONTRACT.positional_row(values))
 
 
 def analyze_frame_stream(

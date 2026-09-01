@@ -6,48 +6,12 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from src.csv_contracts import HEATMAP_ANNOTATION_CSV_CONTRACT, PREDICTION_REFERENCE_CSV_CONTRACT
 from src.data_registry import display_path, iter_heatmap_matches, resolve_project_path
 
 
-ANNOTATION_FIELDS = [
-    "match_id",
-    "heatmap_id",
-    "time",
-    "frame_index",
-    "team",
-    "slot_hint",
-    "annotation_id",
-    "x",
-    "y",
-    "visibility",
-    "frame_complete",
-    "notes",
-    "frame_path",
-    "preview_path",
-    "source_prediction_x",
-    "source_prediction_y",
-    "source_confidence",
-    "source_track_status",
-    "source_player_id",
-]
-
-PREDICTION_FIELDS = [
-    "match_id",
-    "heatmap_id",
-    "time",
-    "frame_index",
-    "team",
-    "track_slot",
-    "player_id",
-    "x",
-    "y",
-    "confidence",
-    "identity_confidence",
-    "track_status",
-    "step_distance",
-    "frame_path",
-    "preview_path",
-]
+ANNOTATION_FIELDS = list(HEATMAP_ANNOTATION_CSV_CONTRACT.fields)
+PREDICTION_FIELDS = list(PREDICTION_REFERENCE_CSV_CONTRACT.fields)
 
 
 def read_csv_rows(path: Path) -> list[dict[str, str]]:

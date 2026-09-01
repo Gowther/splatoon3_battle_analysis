@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+from src.csv_contracts import DEATH_POSITION_CSV_CONTRACT
 from src.death_events import (
     DEFAULT_ALIVE_STATE_IDS,
     DEFAULT_DEAD_STATE_IDS,
@@ -26,38 +27,7 @@ from src.heatmap.render_heatmaps import team_display_color
 from src.heatmap.render_stage_space import DEFAULT_CANVAS_SIZE, DEFAULT_MARGIN, stage_to_pixel
 
 
-POSITION_FIELDS = [
-    "event_id",
-    "match_id",
-    "event_time",
-    "event",
-    "team",
-    "victim",
-    "victim_slot",
-    "victim_weapon",
-    "track_slot",
-    "player_id",
-    "x",
-    "y",
-    "point_time",
-    "point_delta_seconds",
-    "after_point_time",
-    "after_point_delta_seconds",
-    "stage_x",
-    "stage_y",
-    "stage_inside_roi",
-    "location_status",
-    "location_reason",
-    "assignment_method",
-    "assignment_confidence",
-    "candidate_count",
-    "candidate_margin",
-    "source_frame",
-    "clip_start",
-    "clip_end",
-    "evidence",
-    "notes",
-]
+POSITION_FIELDS = list(DEATH_POSITION_CSV_CONTRACT.fields)
 
 
 def parse_args() -> argparse.Namespace:

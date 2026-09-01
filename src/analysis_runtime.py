@@ -7,43 +7,10 @@ from pathlib import Path
 from typing import List, Optional
 
 from src.core.paths import ROOT, default_output_path, project_path
+from src.csv_contracts import ANALYSIS_CSV_CONTRACT
 
 
-CSV_HEADER = [
-    "elapsed_time",
-    "player_state_1",
-    "player_state_2",
-    "player_state_3",
-    "player_state_4",
-    "player_state_5",
-    "player_state_6",
-    "player_state_7",
-    "player_state_8",
-    "count_left",
-    "count_right",
-    "penalty_left",
-    "penalty_right",
-    "weapon_1",
-    "weapon_2",
-    "weapon_3",
-    "weapon_4",
-    "weapon_5",
-    "weapon_6",
-    "weapon_7",
-    "weapon_8",
-    "stage",
-    "asari_count",
-    "hoko_count",
-    "area_count",
-    "yagura_count",
-    "message",
-    "player_detected",
-    "reserved_28",
-    "timestamp",
-    "reserved_30",
-    "reserved_31",
-    "reserved_32",
-]
+CSV_HEADER = list(ANALYSIS_CSV_CONTRACT.fields)
 
 
 @dataclass
@@ -73,6 +40,8 @@ def preview_dir_from_arg(value: str | None) -> Path | None:
 
 
 def write_analysis_csv(output_path: Path, rows: List[List[object]], include_header: bool = True) -> None:
+    for row_number, row in enumerate(rows, start=1):
+        ANALYSIS_CSV_CONTRACT.validate_row(row, row_number=row_number)
     with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         if include_header:

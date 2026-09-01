@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
+from src.csv_contracts import RAW_MARKER_CSV_CONTRACT
 from src.heatmap.extract_frames import load_config, resolve_path, team_mask
 
 
@@ -49,24 +50,9 @@ def read_csv(path: Path) -> List[Dict[str, str]]:
 
 
 def write_points(path: Path, rows: Sequence[Point]) -> None:
-    fieldnames = [
-        "match_id",
-        "time",
-        "frame_index",
-        "team",
-        "player_id",
-        "track_slot_hint",
-        "x",
-        "y",
-        "confidence",
-        "source",
-        "area",
-        "label_distance",
-        "frame_path",
-    ]
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer = csv.DictWriter(f, fieldnames=RAW_MARKER_CSV_CONTRACT.fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 

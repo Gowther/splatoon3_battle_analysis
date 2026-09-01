@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+from src.csv_contracts import CLEAN_POINT_CSV_CONTRACT, REJECTED_POINT_CSV_CONTRACT, TRACK_CSV_CONTRACT
 from src.heatmap.detect_markers import load_mask
 from src.heatmap.extract_frames import load_config, resolve_path
 
@@ -34,57 +35,9 @@ class TrackState:
         return self.x + self.vx * elapsed, self.y + self.vy * elapsed
 
 
-CLEAN_FIELDNAMES = [
-    "match_id",
-    "time",
-    "frame_index",
-    "team",
-    "player_id",
-    "track_slot_hint",
-    "x",
-    "y",
-    "confidence",
-    "source",
-    "clean_stage",
-    "frame_path",
-]
-
-REJECT_FIELDNAMES = [
-    "match_id",
-    "time",
-    "frame_index",
-    "team",
-    "player_id",
-    "track_slot_hint",
-    "x",
-    "y",
-    "confidence",
-    "source",
-    "area",
-    "label_distance",
-    "frame_path",
-    "reject_reason",
-]
-
-TRACK_FIELDNAMES = [
-    "match_id",
-    "time",
-    "frame_index",
-    "team",
-    "track_slot",
-    "player_id",
-    "x",
-    "y",
-    "confidence",
-    "track_status",
-    "step_distance",
-    "time_delta",
-    "prediction_error",
-    "tracking_confidence",
-    "observation_count",
-    "source",
-    "frame_path",
-]
+CLEAN_FIELDNAMES = list(CLEAN_POINT_CSV_CONTRACT.fields)
+REJECT_FIELDNAMES = list(REJECTED_POINT_CSV_CONTRACT.fields)
+TRACK_FIELDNAMES = list(TRACK_CSV_CONTRACT.fields)
 
 
 def parse_args() -> argparse.Namespace:
