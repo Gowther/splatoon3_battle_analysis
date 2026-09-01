@@ -3,23 +3,22 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
-import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
+from src.core.paths import display_path as rel
 from src.heatmap.color_calibration import resolve_config
 from src.heatmap.death_positions import run_death_position_pipeline
 from src.heatmap.extract_frames import ROOT, load_config, resolve_path
+from src.heatmap.run_manifest import runtime_model_report, write_run_manifest
 from src.heatmap.render_stage_space import render_stage_heatmaps
 from src.heatmap.stage_coordinates import (
     build_stage_coordinate_report,
     discover_control_point_asset,
 )
-
-
 def stage_tracks_csv_path(config: Dict) -> Path:
     outputs = config.get("outputs", {})
     configured = outputs.get("player_tracks_stage_csv") if isinstance(outputs, dict) else None
@@ -126,13 +125,6 @@ def count_csv_rows(path: Path) -> int:
     return max(0, row_count - 1)
 
 
-def rel(path: Path) -> str:
-    try:
-        return str(path.relative_to(ROOT))
-    except ValueError:
-        return str(path)
-
-
 def artifact_line(label: str, path: Path) -> str:
     exists = "yes" if path.exists() else "no"
     return f"- {label}: `{rel(path)}` ({exists})"
@@ -188,84 +180,6 @@ def clean_generated_outputs(config: Dict) -> List[str]:
             path.unlink()
         removed.append(rel(path))
     return removed
-
-
-def artifact_status(config: Dict, extra_paths: Dict[str, Path]) -> List[Dict[str, object]]:
-    artifacts: List[Dict[str, object]] = []
-    output_values = {
-        **{f"outputs.{key}": value for key, value in config.get("outputs", {}).items() if isinstance(value, str)},
-        "state_join.state_csv": config.get("state_join", {}).get("state_csv", ""),
-    }
-    for label, value in output_values.items():
-        if not value:
-            continue
-        path = resolve_path(value)
-        artifacts.append({"label": label, "path": rel(path), "exists": path.exists(), "kind": "dir" if path.is_dir() else "file"})
-    for label, path in extra_paths.items():
-        artifacts.append({"label": label, "path": rel(path), "exists": path.exists(), "kind": "dir" if path.is_dir() else "file"})
-    return artifacts
-
-
-def write_run_manifest(
-    config: Dict,
-    args: argparse.Namespace,
-    *,
-    source_config_path: Path,
-    resolved_config_path: Path,
-    color_report_path: Path,
-    report_path: Path,
-    command_hint: str,
-    cleaned_paths: List[str],
-    stage_normalization: Optional[Dict[str, Any]] = None,
-    stage_rendering: Optional[Dict[str, Any]] = None,
-    death_positions: Optional[Dict[str, Any]] = None,
-) -> Path:
-    output_dir = resolve_path(config["match"]["output_dir"])
-    manifest_path = output_dir / "run_manifest.json"
-    extra_artifacts = {
-        "resolved_config": resolved_config_path,
-        "color_report": color_report_path,
-        "report": report_path,
-        "run_manifest": manifest_path,
-    }
-    if stage_normalization and stage_normalization.get("output"):
-        extra_artifacts["stage_tracks"] = resolve_path(stage_normalization["output"])
-    if stage_rendering and stage_rendering.get("output_dir"):
-        extra_artifacts["stage_rendering"] = resolve_path(stage_rendering["output_dir"])
-    if death_positions:
-        for key in ("event_csv", "event_json", "position_csv", "report_json"):
-            if death_positions.get(key):
-                extra_artifacts[f"death_positions.{key}"] = resolve_path(death_positions[key])
-    manifest = {
-        "schema_version": 1,
-        "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
-        "match_id": config["match"]["id"],
-        "input_video": config["match"]["input_video"],
-        "source_config": rel(resolve_path(source_config_path)),
-        "resolved_config": rel(resolved_config_path),
-        "color_report": rel(color_report_path),
-        "report": rel(report_path),
-        "command": command_hint,
-        "options": {
-            "device": args.device,
-            "warmup_frames": args.warmup_frames,
-            "contact_limit": args.contact_limit,
-            "skip_ui_analysis": args.skip_ui_analysis,
-            "only_report": args.only_report,
-            "clean_output": args.clean_output,
-            "event_csv": args.event_csv or "",
-            "teams": args.teams or "",
-            "disable_auto_colors": args.disable_auto_colors,
-        },
-        "cleaned_paths": cleaned_paths,
-        "stage_normalization": stage_normalization or {"status": "no_asset", "method": "", "output": ""},
-        "stage_rendering": stage_rendering or {"status": "skipped", "rendered": {}},
-        "death_positions": death_positions or {"status": "empty", "event_count": 0},
-        "artifacts": artifact_status(config, extra_artifacts),
-    }
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return manifest_path
 
 
 def write_report(
@@ -649,6 +563,7 @@ def main() -> int:
         stage_normalization=stage_normalization,
         stage_rendering=stage_rendering,
         death_positions=death_positions,
+        model_report=runtime_model_report(args),
     )
     print(f"\nreport: {report_path}")
     print(f"manifest: {manifest_path}")

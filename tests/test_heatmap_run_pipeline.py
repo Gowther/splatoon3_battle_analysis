@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from src.csv_contracts import PLAYER_TRACK_CSV_CONTRACT, STAGE_PLAYER_TRACK_CSV_CONTRACT
 from src.heatmap.run_pipeline import (
     clean_generated_outputs,
     configured_output_paths,
+    main as run_pipeline_main,
     run_pipeline,
     run_stage_normalization,
     run_stage_rendering,
+    runtime_model_report,
     write_run_manifest,
 )
 from src.heatmap.stage_coordinates import discover_control_point_asset
@@ -114,9 +119,180 @@ class HeatmapRunPipelineTests(unittest.TestCase):
             payload = json.loads(manifest_path.read_text(encoding="utf-8"))
 
         self.assertEqual(payload["match_id"], "sample")
+        self.assertEqual(payload["schema_version"], 2)
         self.assertTrue(payload["options"]["clean_output"])
         self.assertEqual(payload["cleaned_paths"], ["outputs/old.csv"])
         self.assertEqual(payload["stage_normalization"]["status"], "no_asset")
+
+    def test_stage_output_and_manifest_obey_versioned_artifact_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "heatmap"
+            output_dir.mkdir(parents=True)
+            video = root / "match.mp4"
+            video.write_bytes(b"tiny video fixture")
+            source_config = root / "source.yaml"
+            source_config.write_text("match: fixture\n", encoding="utf-8")
+            resolved_config = output_dir / "resolved_config.yaml"
+            resolved_config.write_text("match: fixture\nresolved: true\n", encoding="utf-8")
+            report = output_dir / "report.md"
+            report.write_text("# fixture report\n", encoding="utf-8")
+            color_report = output_dir / "color_calibration_report.csv"
+            color_report.write_text("team,hue\nblue,120\n", encoding="utf-8")
+            player_tracks = output_dir / "player_tracks.csv"
+            stage_tracks = output_dir / "player_tracks_stage.csv"
+            row = {field: "" for field in PLAYER_TRACK_CSV_CONTRACT.fields}
+            row.update({"match_id": "fixture", "time": "1.0", "team": "blue", "x": "50", "y": "25"})
+            with player_tracks.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=PLAYER_TRACK_CSV_CONTRACT.fields)
+                writer.writeheader()
+                writer.writerow(row)
+            config = {
+                "match": {"id": "fixture", "input_video": str(video), "output_dir": str(output_dir)},
+                "outputs": {
+                    "player_tracks_csv": str(player_tracks),
+                    "player_tracks_stage_csv": str(stage_tracks),
+                    "report_md": str(report),
+                },
+                "state_join": {},
+                "map_view": {"roi": {"x1": 0, "y1": 0, "x2": 100, "y2": 100}},
+            }
+            args = argparse.Namespace(
+                device="cpu",
+                warmup_frames=10,
+                contact_limit=24,
+                skip_ui_analysis=True,
+                only_report=False,
+                clean_output=False,
+                event_csv=None,
+                teams=None,
+                disable_auto_colors=False,
+            )
+
+            stage_report = run_stage_normalization(config)
+            manifest_path = write_run_manifest(
+                config,
+                args,
+                source_config_path=source_config,
+                resolved_config_path=resolved_config,
+                color_report_path=color_report,
+                report_path=report,
+                command_hint="python -m src.heatmap.run_pipeline --config fixture",
+                cleaned_paths=[],
+                stage_normalization=stage_report,
+                model_report={"schema_version": 1, "status": "not_used", "models": []},
+            )
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            artifacts = {item["label"]: item for item in payload["artifacts"]}
+            with stage_tracks.open(newline="", encoding="utf-8") as handle:
+                stage_header = next(csv.reader(handle))
+
+        self.assertEqual(stage_header, list(STAGE_PLAYER_TRACK_CSV_CONTRACT.fields))
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["contract_mismatches"], [])
+        self.assertEqual(len(payload["run_fingerprint"]), 64)
+        self.assertEqual(payload["inputs"]["input_video"]["sha256"], hashlib.sha256(b"tiny video fixture").hexdigest())
+        self.assertEqual(artifacts["outputs.player_tracks_csv"]["contract_status"], "passed")
+        self.assertEqual(artifacts["outputs.player_tracks_stage_csv"]["contract_status"], "passed")
+        self.assertIn("sha256", artifacts["report"])
+
+    def test_manifest_marks_existing_csv_with_wrong_header_for_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "heatmap"
+            output_dir.mkdir(parents=True)
+            tracks = output_dir / "team_tracks.csv"
+            tracks.write_text("wrong,header\n1,2\n", encoding="utf-8")
+            report = output_dir / "report.md"
+            report.write_text("# report\n", encoding="utf-8")
+            config = {
+                "match": {"id": "bad_schema", "input_video": "missing.mp4", "output_dir": str(output_dir)},
+                "outputs": {"tracks_csv": str(tracks), "report_md": str(report)},
+                "state_join": {},
+            }
+            args = argparse.Namespace(
+                device="cpu",
+                warmup_frames=10,
+                contact_limit=24,
+                skip_ui_analysis=True,
+                only_report=False,
+                clean_output=False,
+                event_csv=None,
+                teams=None,
+                disable_auto_colors=False,
+            )
+
+            manifest_path = write_run_manifest(
+                config,
+                args,
+                source_config_path=Path("missing.yaml"),
+                resolved_config_path=output_dir / "missing-resolved.yaml",
+                color_report_path=output_dir / "missing-colors.csv",
+                report_path=report,
+                command_hint="fixture",
+                cleaned_paths=[],
+            )
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            artifact = next(item for item in payload["artifacts"] if item["label"] == "outputs.tracks_csv")
+
+        self.assertEqual(payload["status"], "needs_review")
+        self.assertEqual(payload["contract_mismatches"], ["outputs.tracks_csv"])
+        self.assertEqual(artifact["contract_status"], "mismatch")
+        self.assertEqual(artifact["actual_columns"], ["wrong", "header"])
+
+    def test_main_passes_model_provenance_to_run_manifest(self) -> None:
+        args = argparse.Namespace(
+            config="fixture.yaml",
+            device="cpu",
+            warmup_frames=10,
+            contact_limit=24,
+            skip_ui_analysis=False,
+            only_report=True,
+            clean_output=False,
+            event_csv=None,
+            teams=None,
+            disable_auto_colors=False,
+        )
+        config = {"match": {"id": "fixture", "input_video": "fixture.mp4", "output_dir": "outputs/fixture"}}
+        model_report = {"schema_version": 1, "status": "passed", "models": [{"id": "fixture_model"}]}
+
+        with (
+            patch("src.heatmap.run_pipeline.parse_args", return_value=args),
+            patch("src.heatmap.run_pipeline.load_config", return_value=config),
+            patch(
+                "src.heatmap.run_pipeline.resolve_config",
+                return_value=(config, Path("outputs/fixture/resolved.yaml"), Path("outputs/fixture/colors.csv")),
+            ),
+            patch("src.heatmap.run_pipeline.run_stage_normalization", return_value={"status": "no_points"}),
+            patch("src.heatmap.run_pipeline.run_stage_rendering", return_value={"status": "skipped"}),
+            patch(
+                "src.heatmap.run_pipeline.run_death_position_pipeline",
+                return_value={"status": "empty", "event_count": 0},
+            ),
+            patch("src.heatmap.run_pipeline.write_report", return_value=Path("outputs/fixture/report.md")),
+            patch("src.heatmap.run_pipeline.runtime_model_report", return_value=model_report),
+            patch("src.heatmap.run_pipeline.write_run_manifest", return_value=Path("outputs/fixture/run_manifest.json")) as write,
+            patch("builtins.print"),
+        ):
+            result = run_pipeline_main()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(write.call_args.kwargs["model_report"], model_report)
+
+    def test_runtime_model_report_only_hashes_models_when_ui_analysis_runs(self) -> None:
+        reused_args = argparse.Namespace(skip_ui_analysis=True, only_report=False)
+        self.assertEqual(runtime_model_report(reused_args)["status"], "not_used")
+
+        analysis_args = argparse.Namespace(skip_ui_analysis=False, only_report=False)
+        registry = {"schema_version": 1, "models": []}
+        expected = {"schema_version": 1, "status": "passed", "models": []}
+        with (
+            patch("src.heatmap.run_manifest.load_model_registry", return_value=registry),
+            patch("src.heatmap.run_manifest.build_model_registry_report", return_value=expected) as build,
+        ):
+            report = runtime_model_report(analysis_args)
+
+        self.assertEqual(report, expected)
+        build.assert_called_once_with(registry, verify_hash=True)
 
     def test_configured_output_paths_include_stage_tracks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

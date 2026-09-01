@@ -39,6 +39,14 @@ class CsvContract:
             f"{self.contract_id}{location} has {len(row)} columns; expected {len(self.fields)}"
         )
 
+    def validate_header(self, fields: Sequence[str]) -> None:
+        actual = tuple(fields)
+        if actual == self.fields:
+            return
+        raise ValueError(
+            f"{self.contract_id} header does not match schema version {self.schema_version}"
+        )
+
     def manifest_record(self) -> dict[str, object]:
         return {
             "contract_id": self.contract_id,
@@ -167,6 +175,12 @@ PLAYER_TRACK_CSV_CONTRACT = CsvContract(
         "identity_note",
         "frame_path",
     ),
+)
+
+STAGE_PLAYER_TRACK_CSV_CONTRACT = CsvContract(
+    "heatmap.player_tracks_stage",
+    1,
+    (*PLAYER_TRACK_CSV_CONTRACT.fields, "stage_x", "stage_y", "stage_inside_roi"),
 )
 
 TRACK_GAP_CSV_CONTRACT = CsvContract(
@@ -306,6 +320,7 @@ CORE_CSV_CONTRACTS = (
     REJECTED_POINT_CSV_CONTRACT,
     TRACK_CSV_CONTRACT,
     PLAYER_TRACK_CSV_CONTRACT,
+    STAGE_PLAYER_TRACK_CSV_CONTRACT,
     TRACK_GAP_CSV_CONTRACT,
     HEATMAP_ANNOTATION_CSV_CONTRACT,
     PREDICTION_REFERENCE_CSV_CONTRACT,
