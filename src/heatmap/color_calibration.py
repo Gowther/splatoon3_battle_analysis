@@ -11,7 +11,8 @@ import cv2
 import numpy as np
 import yaml
 
-from src.heatmap.extract_frames import ROOT, apply_excludes, clip_box, resolve_path, team_mask
+from src.core.paths import display_path
+from src.heatmap.extract_frames import apply_excludes, clip_box, resolve_path, team_mask
 
 
 HueRange = Dict[str, List[int]]
@@ -375,13 +376,6 @@ def report_paths(config: Dict, output_path: Optional[Path]) -> Tuple[Path, Path]
     resolved_config_path = output_path or output_dir / "resolved_config.yaml"
     report_path = output_dir / "color_calibration_report.csv"
     return resolved_config_path, report_path
-
-
-def display_path(path: Path) -> str:
-    try:
-        return str(path.relative_to(ROOT))
-    except ValueError:
-        return str(path)
 
 
 def write_report(path: Path, rows: Sequence[Dict[str, object]]) -> None:

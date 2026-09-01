@@ -3,11 +3,11 @@ from __future__ import annotations
 import csv
 import html
 import json
-import os
 from pathlib import Path
 from typing import Any
 
-from src.data_registry import display_path, resolve_project_path
+from src.core.paths import relative_asset_path
+from src.data_registry import display_path
 from src.heatmap.annotation_samples import ANNOTATION_FIELDS
 from src.heatmap.annotation_round import has_manual_position, is_visible_task, priority_score
 
@@ -15,17 +15,6 @@ from src.heatmap.annotation_round import has_manual_position, is_visible_task, p
 def read_annotation_rows(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
-
-
-def relative_asset_path(value: str, output_html: Path) -> str:
-    if not value:
-        return ""
-    target = (resolve_project_path(value) or Path(value).expanduser()).resolve()
-    output_parent = output_html.expanduser().resolve().parent
-    try:
-        return Path(os.path.relpath(target, start=output_parent)).as_posix()
-    except ValueError:
-        return target.as_uri()
 
 
 def priority_group(row: dict[str, str]) -> tuple[str, str, str]:

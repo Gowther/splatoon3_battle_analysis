@@ -4,27 +4,9 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
+from src.core.paths import ROOT, display_path, resolve_project_path
 
-ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "config" / "data_registry.json"
-
-
-def resolve_project_path(value: str | Path | None, root: Path = ROOT) -> Path | None:
-    if value in (None, ""):
-        return None
-    path = Path(value).expanduser()
-    if path.is_absolute():
-        return path
-    return root / path
-
-
-def display_path(path: Path | None, root: Path = ROOT) -> str:
-    if path is None:
-        return ""
-    try:
-        return str(path.relative_to(root))
-    except ValueError:
-        return str(path)
 
 
 def load_registry(path: str | Path | None = None) -> dict[str, Any]:

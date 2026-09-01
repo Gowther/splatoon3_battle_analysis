@@ -4,16 +4,13 @@ import argparse
 import csv
 import math
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple, Union
+from typing import Dict, Iterable, List, Sequence, Tuple
 
 import cv2
 import numpy as np
 
+from src.core.paths import ROOT, project_path as resolve_path
 from src.heatmap.config_loader import load_config
-
-
-ROOT = Path(__file__).resolve().parents[2]
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Extract overhead-map frames for heatmap analysis.")
@@ -21,12 +18,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-save-frames", action="store_true", help="Only write CSV/contact output.")
     parser.add_argument("--contact-limit", type=int, default=36, help="Maximum frames shown in the contact sheet.")
     return parser.parse_args()
-
-
-def resolve_path(path: Union[str, Path]) -> Path:
-    output = Path(path).expanduser()
-    return output if output.is_absolute() else ROOT / output
-
 
 def seconds_range(start: float, stop: float, sample_fps: float) -> Iterable[float]:
     step = 1.0 / sample_fps

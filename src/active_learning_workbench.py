@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from src.core.paths import ROOT, project_path
+from src.core.paths import ROOT, display_path, project_path
 from src.data_registry import load_registry
 from src.death_annotation_store import (
     DEATH_REVIEW_FIELDS,
@@ -260,14 +260,6 @@ ACTION_BY_ID = {definition.id: definition for definition in ACTION_DEFINITIONS}
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def display_path(path: str | Path) -> str:
-    resolved = project_path(path)
-    try:
-        return str(resolved.relative_to(ROOT))
-    except ValueError:
-        return str(resolved)
 
 
 def read_json(path: str | Path, default: Any) -> Any:

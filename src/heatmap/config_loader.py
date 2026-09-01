@@ -6,14 +6,7 @@ from typing import Any, Mapping, MutableMapping
 
 import yaml
 
-
-ROOT = Path(__file__).resolve().parents[2]
-
-
-def resolve_path(path: str | Path) -> Path:
-    output = Path(path).expanduser()
-    return output if output.is_absolute() else ROOT / output
-
+from src.core.paths import project_path as resolve_path
 
 def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
     merged = copy.deepcopy(dict(base))
