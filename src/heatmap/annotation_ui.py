@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import html
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -19,15 +20,12 @@ def read_annotation_rows(path: Path) -> list[dict[str, str]]:
 def relative_asset_path(value: str, output_html: Path) -> str:
     if not value:
         return ""
-    target = resolve_project_path(value) or Path(value).expanduser()
+    target = (resolve_project_path(value) or Path(value).expanduser()).resolve()
+    output_parent = output_html.expanduser().resolve().parent
     try:
-        return str(target.relative_to(output_html.parent))
+        return Path(os.path.relpath(target, start=output_parent)).as_posix()
     except ValueError:
-        pass
-    try:
-        return str(target.relative_to(Path.cwd()))
-    except ValueError:
-        return target.as_uri() if target.is_absolute() else str(target)
+        return target.as_uri()
 
 
 def priority_group(row: dict[str, str]) -> tuple[str, str, str]:

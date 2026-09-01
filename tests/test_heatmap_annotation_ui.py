@@ -1,14 +1,30 @@
 from __future__ import annotations
 
 import csv
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
-from src.heatmap.annotation_ui import build_annotation_ui, prioritize_annotation_rows, render_annotation_html
+from src.heatmap.annotation_ui import (
+    build_annotation_ui,
+    prioritize_annotation_rows,
+    relative_asset_path,
+    render_annotation_html,
+)
 
 
 class HeatmapAnnotationUiTests(unittest.TestCase):
+    def test_relative_asset_path_uses_relative_output_html_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "annotation_package"
+            output_html = Path(os.path.relpath(package / "annotation_ui.html", Path.cwd()))
+            frame = package / "frames" / "frame.jpg"
+
+            asset_path = relative_asset_path(str(frame), output_html)
+
+        self.assertEqual(asset_path, "frames/frame.jpg")
+
     def test_render_annotation_html_embeds_rows_and_click_handler(self) -> None:
         html = render_annotation_html(
             [
