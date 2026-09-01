@@ -61,7 +61,7 @@ def main() -> int:
         report["annotation_ui"] = build_annotation_ui(
             annotation_csv,
             ui_output,
-            title=f"Heatmap Annotation Round: {args.round_id}",
+            title=f"热力图人工标注：{args.round_id}",
             priority_limit=args.priority_limit,
         )
     write_text_report(args.output.expanduser(), render_markdown(report))

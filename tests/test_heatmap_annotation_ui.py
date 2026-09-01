@@ -42,7 +42,13 @@ class HeatmapAnnotationUiTests(unittest.TestCase):
 
         self.assertIn("const rows =", html)
         self.assertIn("frameImage.addEventListener", html)
-        self.assertIn("Download CSV", html)
+        self.assertIn('<html lang="zh-CN">', html)
+        self.assertIn("下载标注 CSV", html)
+        self.assertIn("非俯视图：跳过本帧本队", html)
+        self.assertIn("skip_reason=non_overhead_view", html)
+        self.assertIn('<option value="visible">可见，正常标注</option>', html)
+        self.assertIn('visibilityInput.addEventListener("change"', html)
+        self.assertIn("页面不会直接修改原 CSV", html)
 
     def test_build_annotation_ui_writes_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -55,9 +61,11 @@ class HeatmapAnnotationUiTests(unittest.TestCase):
             html_path = root / "annotation_ui.html"
 
             report = build_annotation_ui(csv_path, html_path)
+            html = html_path.read_text(encoding="utf-8")
 
         self.assertEqual(report["status"], "ready")
         self.assertEqual(report["rows"], 1)
+        self.assertIn("热力图人工标注", html)
 
     def test_prioritize_annotation_rows_moves_unlabeled_jump_resets_first(self) -> None:
         rows = [

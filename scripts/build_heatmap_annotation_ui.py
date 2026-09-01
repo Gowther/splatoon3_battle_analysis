@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=ROOT / "outputs" / "heatmap_annotation_round1" / "annotation_ui.html",
     )
-    parser.add_argument("--title", default="Heatmap Annotation Round")
+    parser.add_argument("--title", default="热力图人工标注")
     parser.add_argument(
         "--priority-limit",
         type=int,
