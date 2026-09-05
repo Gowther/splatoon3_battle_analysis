@@ -10,9 +10,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 from src.core.paths import ROOT, display_path, project_path
 from src.data_registry import load_registry
+from src.workbench_store import json_transaction, read_json, write_json
 from src.death_annotation_store import (
     DEATH_REVIEW_FIELDS,
     merge_review_rows,
@@ -260,23 +262,6 @@ ACTION_BY_ID = {definition.id: definition for definition in ACTION_DEFINITIONS}
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def read_json(path: str | Path, default: Any) -> Any:
-    if not str(path):
-        return default
-    resolved = project_path(path)
-    if not resolved.exists() or resolved.is_dir():
-        return default
-    with resolved.open(encoding="utf-8") as f:
-        return json.load(f)
-
-
-def write_json(path: str | Path, payload: Any) -> Path:
-    resolved = project_path(path)
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    resolved.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return resolved
 
 
 def read_csv_rows(path: str | Path) -> list[dict[str, str]]:
@@ -884,33 +869,32 @@ def upsert_staging_annotation(
     item_id = str(payload.get("id", "")).strip()
     if not item_id:
         raise ValueError("annotation id is required")
-    staging = load_staging(staging_path)
-    existing = staging_by_id(staging)
-    candidate = payload.get("candidate", {}) if isinstance(payload.get("candidate"), dict) else {}
-    item = dict(existing.get(item_id, {}))
-    item.update(
-        {
-            "id": item_id,
-            "target": str(payload.get("target") or item.get("target") or candidate.get("target", "")),
-            "annotation_type": str(
-                payload.get("annotation_type") or item.get("annotation_type") or candidate.get("annotation_type", "")
-            ),
-            "status": str(payload.get("status") or item.get("status") or "draft"),
-            "split": str(payload.get("split") or item.get("split") or "train"),
-            "candidate": candidate or item.get("candidate", {}),
-            "annotation": payload.get("annotation", item.get("annotation", {})),
-            "source": str(payload.get("source") or item.get("source") or "human"),
-            "updated_at": utc_now(),
-        }
-    )
-    validation_errors = validate_staging_item(item) if item.get("status") == "done" else []
-    item["validation_errors"] = validation_errors
-    item["validation_status"] = "needs_fix" if validation_errors else ("ready" if item.get("status") == "done" else "draft")
-    items = [entry for entry in staging.get("items", []) if isinstance(entry, dict) and str(entry.get("id")) != item_id]
-    items.append(item)
-    staging["items"] = sorted(items, key=lambda entry: str(entry.get("id", "")))
-    staging["updated_at"] = utc_now()
-    write_json(staging_path, staging)
+    with json_transaction(staging_path, load_staging) as staging:
+        existing = staging_by_id(staging)
+        candidate = payload.get("candidate", {}) if isinstance(payload.get("candidate"), dict) else {}
+        item = dict(existing.get(item_id, {}))
+        item.update(
+            {
+                "id": item_id,
+                "target": str(payload.get("target") or item.get("target") or candidate.get("target", "")),
+                "annotation_type": str(
+                    payload.get("annotation_type") or item.get("annotation_type") or candidate.get("annotation_type", "")
+                ),
+                "status": str(payload.get("status") or item.get("status") or "draft"),
+                "split": str(payload.get("split") or item.get("split") or "train"),
+                "candidate": candidate or item.get("candidate", {}),
+                "annotation": payload.get("annotation", item.get("annotation", {})),
+                "source": str(payload.get("source") or item.get("source") or "human"),
+                "updated_at": utc_now(),
+            }
+        )
+        validation_errors = validate_staging_item(item) if item.get("status") == "done" else []
+        item["validation_errors"] = validation_errors
+        item["validation_status"] = "needs_fix" if validation_errors else ("ready" if item.get("status") == "done" else "draft")
+        items = [entry for entry in staging.get("items", []) if isinstance(entry, dict) and str(entry.get("id")) != item_id]
+        items.append(item)
+        staging["items"] = sorted(items, key=lambda entry: str(entry.get("id", "")))
+        staging["updated_at"] = utc_now()
     return item
 
 
@@ -1140,12 +1124,11 @@ def record_llm_review(
 ) -> dict[str, Any]:
     if not item_id:
         raise ValueError("item_id is required")
-    payload = load_llm_reviews(reviews_path)
     review = dict(review)
     review["updated_at"] = utc_now()
-    payload["reviews"][item_id] = review
-    payload["updated_at"] = utc_now()
-    write_json(reviews_path, payload)
+    with json_transaction(reviews_path, load_llm_reviews) as payload:
+        payload["reviews"][item_id] = review
+        payload["updated_at"] = utc_now()
     return review
 
 
@@ -1189,15 +1172,14 @@ def auto_record_llm_reviews(
         for item in load_candidate_queue(manifest_path, staging_path, reviews_path, dedupe=True)
         if item.get("status") in {"todo", "draft"}
     ][:limit]
-    payload = load_llm_reviews(reviews_path)
     recorded: list[dict[str, Any]] = []
-    for candidate in candidates:
-        review = heuristic_llm_review(candidate)
-        review["updated_at"] = utc_now()
-        payload["reviews"][str(candidate["id"])] = review
-        recorded.append({"id": candidate["id"], **review})
-    payload["updated_at"] = utc_now()
-    write_json(reviews_path, payload)
+    with json_transaction(reviews_path, load_llm_reviews) as payload:
+        for candidate in candidates:
+            review = heuristic_llm_review(candidate)
+            review["updated_at"] = utc_now()
+            payload["reviews"][str(candidate["id"])] = review
+            recorded.append({"id": candidate["id"], **review})
+        payload["updated_at"] = utc_now()
     return {
         "schema_version": 1,
         "status": "ready" if recorded else "empty",
@@ -1264,12 +1246,11 @@ def load_jobs(path: Path = DEFAULT_JOBS_PATH) -> dict[str, Any]:
 def upsert_job_record(job: dict[str, Any], path: Path = DEFAULT_JOBS_PATH) -> dict[str, Any]:
     if not job.get("id"):
         raise ValueError("job id is required")
-    payload = load_jobs(path)
-    jobs = [item for item in payload.get("jobs", []) if isinstance(item, dict) and item.get("id") != job["id"]]
-    jobs.append(job)
-    payload["jobs"] = sorted(jobs, key=lambda item: str(item.get("created_at", "")))[-100:]
-    payload["updated_at"] = utc_now()
-    write_json(path, payload)
+    with json_transaction(path, load_jobs) as payload:
+        jobs = [item for item in payload.get("jobs", []) if isinstance(item, dict) and item.get("id") != job["id"]]
+        jobs.append(job)
+        payload["jobs"] = sorted(jobs, key=lambda item: str(item.get("created_at", "")))[-100:]
+        payload["updated_at"] = utc_now()
     return job
 
 
@@ -1277,7 +1258,7 @@ def start_job_record(action_id: str, payload: dict[str, Any] | None = None, path
     definition = action_definition(action_id)
     created_at = utc_now()
     job = {
-        "id": safe_dataset_stem(f"job:{action_id}:{created_at}"),
+        "id": f"job_{action_id}_{uuid4().hex}",
         "action_id": action_id,
         "label": definition.label,
         "label_zh": definition.label_zh,
@@ -1292,13 +1273,18 @@ def start_job_record(action_id: str, payload: dict[str, Any] | None = None, path
 
 
 def finish_job_record(job_id: str, result: dict[str, Any], path: Path = DEFAULT_JOBS_PATH) -> dict[str, Any]:
-    payload = load_jobs(path)
-    jobs = [item for item in payload.get("jobs", []) if isinstance(item, dict)]
-    job = next((item for item in jobs if item.get("id") == job_id), {"id": job_id, "created_at": utc_now()})
-    job["status"] = str(result.get("status", "failed"))
-    job["result"] = result
-    job["completed_at"] = utc_now()
-    return upsert_job_record(job, path)
+    with json_transaction(path, load_jobs) as payload:
+        jobs = [item for item in payload.get("jobs", []) if isinstance(item, dict)]
+        job = next((item for item in jobs if item.get("id") == job_id), None)
+        if job is None:
+            job = {"id": job_id, "created_at": utc_now()}
+            jobs.append(job)
+        job["status"] = str(result.get("status", "failed"))
+        job["result"] = result
+        job["completed_at"] = utc_now()
+        payload["jobs"] = sorted(jobs, key=lambda item: str(item.get("created_at", "")))[-100:]
+        payload["updated_at"] = utc_now()
+    return job
 
 
 def reconcile_running_jobs(path: Path = DEFAULT_JOBS_PATH) -> int:
@@ -1309,24 +1295,22 @@ def reconcile_running_jobs(path: Path = DEFAULT_JOBS_PATH) -> int:
     gone, so anything still ``running`` in the file died with the old process.
     Returns the number of records reconciled.
     """
-    payload = load_jobs(path)
-    jobs = [item for item in payload.get("jobs", []) if isinstance(item, dict)]
     reconciled = 0
-    for job in jobs:
-        if job.get("status") == "running":
-            job["status"] = "interrupted"
-            job["completed_at"] = utc_now()
-            result = job.get("result")
-            if not isinstance(result, dict):
-                result = {}
-            result["status"] = "interrupted"
-            result.setdefault("error", "server restarted while this job was running")
-            job["result"] = result
-            reconciled += 1
-    if reconciled:
+    with json_transaction(path, load_jobs) as payload:
+        jobs = [item for item in payload.get("jobs", []) if isinstance(item, dict)]
+        for job in jobs:
+            if job.get("status") == "running":
+                job["status"] = "interrupted"
+                job["completed_at"] = utc_now()
+                result = job.get("result")
+                if not isinstance(result, dict):
+                    result = {}
+                result["status"] = "interrupted"
+                result.setdefault("error", "server restarted while this job was running")
+                job["result"] = result
+                reconciled += 1
         payload["jobs"] = jobs
         payload["updated_at"] = utc_now()
-        write_json(path, payload)
     return reconciled
 
 
@@ -1438,14 +1422,15 @@ def command_for_action(action_id: str, payload: dict[str, Any] | None = None) ->
 
 
 def append_action_run(record: dict[str, Any], path: Path = DEFAULT_ACTION_RUNS_PATH) -> dict[str, Any]:
+    return append_automation_run(record, path)
+
+
+def load_run_history(path: Path) -> dict[str, Any]:
     payload = read_json(path, {"schema_version": 1, "runs": []})
     if not isinstance(payload, dict):
         payload = {"schema_version": 1, "runs": []}
     payload.setdefault("runs", [])
-    payload["runs"].append(record)
-    payload["updated_at"] = utc_now()
-    write_json(path, payload)
-    return record
+    return payload
 
 
 def run_workbench_action(
@@ -1495,13 +1480,9 @@ def run_workbench_action(
 
 
 def append_automation_run(record: dict[str, Any], path: Path = DEFAULT_AUTOMATION_RUNS_PATH) -> dict[str, Any]:
-    payload = read_json(path, {"schema_version": 1, "runs": []})
-    if not isinstance(payload, dict):
-        payload = {"schema_version": 1, "runs": []}
-    payload.setdefault("runs", [])
-    payload["runs"].append(record)
-    payload["updated_at"] = utc_now()
-    write_json(path, payload)
+    with json_transaction(path, load_run_history) as payload:
+        payload["runs"].append(record)
+        payload["updated_at"] = utc_now()
     return record
 
 
