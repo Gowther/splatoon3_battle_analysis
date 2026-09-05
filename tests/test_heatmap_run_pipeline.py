@@ -321,6 +321,61 @@ class HeatmapRunPipelineTests(unittest.TestCase):
         self.assertEqual(result["quality"], "provisional")
         self.assertEqual(result["normalized_rows"], 1)
 
+    def test_failed_geometry_does_not_export_or_certify_tracks(self) -> None:
+        from src.heatmap.stage_artifacts import stage_artifact_status, stage_metadata_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tracks = root / "tracks.csv"
+            tracks.write_text("x,y\n5,5\n", encoding="utf-8")
+            points = [
+                {"source": [0, 0], "target": [0, 0]},
+                {"source": [10, 0], "target": [1, 0]},
+                {"source": [10, 10], "target": [1, 1]},
+                {"source": [0, 10], "target": [0, 1]},
+            ]
+            config = {
+                "match": {"id": "geometry_fixture", "output_dir": tmp},
+                "outputs": {"player_tracks_csv": str(tracks)},
+                "map_view": {"roi": {"x1": 0, "y1": 0, "x2": 10, "y2": 10}, "control_points": points},
+                "stage_coordinates": {"stage_id": "fixture_stage"},
+            }
+            valid = run_stage_normalization(config)
+            output = Path(valid["output"])
+            previous_csv = output.read_bytes()
+            self.assertEqual(stage_artifact_status(output)["status"], "ready")
+
+            points.append({"source": [5, 5], "target": [0.9, 0.9]})
+            invalid = run_stage_normalization(config)
+
+            self.assertEqual(invalid["status"], "needs_review")
+            self.assertEqual(invalid["quality"], "rejected")
+            self.assertIn("reprojection", invalid["quality_gate"]["failed_checks"])
+            self.assertEqual(invalid["output"], "")
+            self.assertEqual(output.read_bytes(), previous_csv)
+            self.assertEqual(stage_artifact_status(output)["status"], "needs_calibration")
+            self.assertEqual(json.loads(stage_metadata_path(output).read_text())["quality"], "rejected")
+
+    def test_clustered_control_points_fail_coverage_even_with_exact_reprojection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tracks = Path(tmp) / "tracks.csv"
+            tracks.write_text("x,y\n5,5\n", encoding="utf-8")
+            config = {
+                "match": {"id": "cluster_fixture", "output_dir": tmp},
+                "outputs": {"player_tracks_csv": str(tracks)},
+                "map_view": {
+                    "roi": {"x1": 0, "y1": 0, "x2": 100, "y2": 100},
+                    "control_points": [
+                        {"source": [x, y], "target": [x / 100, y / 100]}
+                        for x, y in ((0, 0), (10, 0), (10, 10), (0, 10))
+                    ],
+                },
+            }
+            result = run_stage_normalization(config)
+            self.assertEqual(result["status"], "needs_review")
+            self.assertIn("coverage", result["quality_gate"]["failed_checks"])
+            self.assertFalse((Path(tmp) / "player_tracks_stage.csv").exists())
+
     def test_run_stage_normalization_with_asset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

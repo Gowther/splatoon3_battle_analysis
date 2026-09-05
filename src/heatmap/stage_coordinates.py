@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping
 import numpy as np
 
 from src.data_registry import display_path, resolve_project_path
+from src.heatmap.stage_artifacts import write_stage_metadata
 
 
 STAGE_OUTPUT_COLUMNS = (
@@ -430,9 +431,22 @@ def build_stage_coordinate_report(
             transform_errors.append(str(exc))
             homography_status = "invalid"
     method = "homography" if homography_matrix is not None else "roi_linear_normalization"
+    quality_gate: dict[str, Any] = {"status": "not_available"}
+    if source_box is not None and control_points and not asset_is_template:
+        from src.heatmap.stage_quality import build_control_point_quality_report
+
+        quality_gate = build_control_point_quality_report(
+            config,
+            {"control_points": control_points, "template": False},
+            labeled_frames=(control_point_asset or {}).get("labeled_frames"),
+        )
+    rejected = bool(transform_errors) or quality_gate["status"] not in {"ready", "not_available"}
+    quality = "rejected" if rejected else ("calibrated" if method == "homography" else "provisional")
     report: dict[str, Any] = {
         "schema_version": 1,
-        "status": "ready" if not transform_errors else "needs_roi",
+        "status": "needs_roi" if source_box is None else ("needs_review" if rejected else "ready"),
+        "quality": quality,
+        "quality_gate": quality_gate,
         "coordinate_space": map_view.get("coordinate_space", "") if isinstance(map_view, Mapping) else "",
         "target_coordinate_space": "stage_normalized_0_1",
         "transform": {
@@ -450,6 +464,16 @@ def build_stage_coordinate_report(
         "points": {"status": "not_requested"},
         "errors": transform_errors,
     }
+    metadata = {
+        "match_id": config.get("match", {}).get("id", ""),
+        "stage_id": config.get("stage_coordinates", {}).get("stage_id", ""),
+        "status": report["status"] if rejected else "pending",
+        "method": method,
+        "quality": quality,
+        "quality_gate": quality_gate,
+    }
+    if normalized_csv is not None:
+        write_stage_metadata(normalized_csv, metadata)
     if source_box is None or points_csv is None:
         return report
 
@@ -458,9 +482,18 @@ def build_stage_coordinate_report(
     if input_path.exists():
         points_info["status"] = "ready"
         if normalized_csv is not None:
-            output_path = Path(normalized_csv).expanduser()
-            summary = write_normalized_csv(input_path, output_path, source_box, homography_matrix=homography_matrix)
-            points_info["normalized_output"] = display_path(output_path)
+            output_path = resolve_project_path(normalized_csv) or Path(normalized_csv).expanduser()
+            if report["status"] == "ready":
+                summary = write_normalized_csv(input_path, output_path, source_box, homography_matrix=homography_matrix)
+                points_info["normalized_output"] = display_path(output_path)
+            else:
+                summary = {}
+                points_info["status"] = "blocked"
+            metadata_path = write_stage_metadata(
+                output_path,
+                {**metadata, "status": report["status"]},
+            )
+            points_info["metadata"] = display_path(metadata_path)
         else:
             summary = summarize_points_csv(input_path, source_box, homography_matrix=homography_matrix)
         points_info["summary"] = summary

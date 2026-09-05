@@ -15,6 +15,7 @@ from src.heatmap.death_positions import run_death_position_pipeline
 from src.heatmap.extract_frames import ROOT, load_config, resolve_path
 from src.heatmap.run_manifest import runtime_model_report, write_run_manifest
 from src.heatmap.render_stage_space import render_stage_heatmaps
+from src.heatmap.stage_artifacts import stage_metadata_path
 from src.heatmap.stage_coordinates import (
     build_stage_coordinate_report,
     discover_control_point_asset,
@@ -50,12 +51,14 @@ def run_stage_normalization(config: Dict) -> Dict[str, Any]:
     return {
         "status": report.get("status", ""),
         "method": transform.get("method", ""),
-        "quality": "calibrated" if transform.get("method") == "homography" else "provisional",
+        "quality": report.get("quality", "rejected"),
+        "quality_gate": report.get("quality_gate", {}),
         "homography_status": transform.get("homography_status", ""),
         "reprojection": transform.get("reprojection", {}),
         "asset": asset.get("path", "") if asset else "",
         "stage_id": asset.get("stage_id", "") if asset else config.get("stage_coordinates", {}).get("stage_id", ""),
-        "output": rel(output_csv),
+        "output": report.get("points", {}).get("normalized_output", ""),
+        "metadata": report.get("points", {}).get("metadata", ""),
         "normalized_rows": summary.get("normalized_rows", 0),
         "outside_roi_rows": summary.get("outside_roi_rows", 0),
     }
@@ -152,6 +155,7 @@ def configured_output_paths(config: Dict) -> List[Path]:
         output_dir / "color_calibration_report.csv",
         output_dir / "run_manifest.json",
         stage_tracks_csv_path(config),
+        stage_metadata_path(stage_tracks_csv_path(config)),
     }
     for value in config.get("outputs", {}).values():
         if isinstance(value, str):

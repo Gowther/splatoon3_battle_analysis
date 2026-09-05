@@ -18,6 +18,7 @@ from src.heatmap.stage_aggregate import (
     render_side_by_side,
 )
 from src.heatmap.stage_registry import register_match
+from src.heatmap.stage_artifacts import stage_metadata_path, write_stage_metadata
 
 
 CONFIG = {
@@ -37,7 +38,7 @@ CONFIG = {
 FIELDS = ["match_id", "time", "team", "track_slot", "confidence", "track_status", "step_distance", "stage_x", "stage_y"]
 
 
-def write_stage_csv(path: Path, points: list[tuple[float, float, str]]) -> None:
+def write_stage_csv(path: Path, points: list[tuple[float, float, str]], match_id: str | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=FIELDS)
@@ -56,6 +57,14 @@ def write_stage_csv(path: Path, points: list[tuple[float, float, str]]) -> None:
                     "stage_y": f"{stage_y}",
                 }
             )
+    write_stage_metadata(path, {
+        "match_id": match_id or path.stem,
+        "stage_id": "gorge",
+        "status": "ready",
+        "quality": "calibrated",
+        "method": "homography",
+        "quality_gate": {"status": "ready"},
+    })
 
 
 def match_payload(match_id: str, points: list[tuple[float, float, str]]) -> dict:
@@ -90,7 +99,7 @@ class LoadAndCollectTests(unittest.TestCase):
     def test_registered_matches_with_data_are_collected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             csv_a = Path(tmp) / "a.csv"
-            write_stage_csv(csv_a, [(0.3, 0.3, "yellow")])
+            write_stage_csv(csv_a, [(0.3, 0.3, "yellow")], match_id="match_a")
             registry = register_match(register_match({"stages": []}, "gorge", "match_a"), "gorge", "match_b")
 
             collected = collect_stage_matches("gorge", registry, {"match_a": csv_a})
@@ -98,6 +107,37 @@ class LoadAndCollectTests(unittest.TestCase):
         self.assertEqual(collected["status"], "ready")
         self.assertEqual([item["match_id"] for item in collected["matches"]], ["match_a"])
         self.assertEqual(collected["missing"], ["match_b"])
+
+    def test_uncalibrated_or_stale_coordinates_are_not_comparable(self) -> None:
+        import json
+
+        for issue in ("missing", "provisional", "wrong_stage", "wrong_match", "failed_gate", "changed_csv"):
+            with self.subTest(issue=issue), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "match_a.csv"
+                write_stage_csv(path, [(0.3, 0.3, "yellow")])
+                metadata_path = stage_metadata_path(path)
+                metadata = json.loads(metadata_path.read_text())
+                if issue == "missing":
+                    metadata_path.unlink()
+                elif issue == "changed_csv":
+                    with path.open("a") as handle:
+                        handle.write("\n")
+                else:
+                    if issue == "provisional":
+                        metadata["quality"] = "provisional"
+                    elif issue == "wrong_stage":
+                        metadata["stage_id"] = "another_stage"
+                    elif issue == "wrong_match":
+                        metadata["match_id"] = "another_match"
+                    else:
+                        metadata["quality_gate"]["status"] = "needs_review"
+                    metadata_path.write_text(json.dumps(metadata))
+                registry = register_match({"stages": []}, "gorge", "match_a")
+                report = build_stage_aggregate("gorge", registry, {"match_a": path}, CONFIG, Path(tmp) / "out")
+                self.assertEqual(report["status"], "needs_calibration")
+                self.assertIn("match_a", report["rejected_matches"])
+                self.assertEqual(report["rendered"], {})
+                self.assertFalse((Path(tmp) / "out").exists())
 
 
 class AggregateHeatTests(unittest.TestCase):

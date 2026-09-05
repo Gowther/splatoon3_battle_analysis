@@ -88,6 +88,8 @@ def main() -> int:
     print(f"stage aggregate: {report['status']} ({report['match_count']} matches)")
     if report["missing_matches"]:
         print(f"missing stage coordinates: {', '.join(report['missing_matches'])}")
+    for match_id, reason in report["rejected_matches"].items():
+        print(f"excluded {match_id}: {reason}")
     if report["rendered"]:
         print(f"rendered {len(report['rendered'])} images -> {report['output_dir']}")
     elif report["status"] != "ready":

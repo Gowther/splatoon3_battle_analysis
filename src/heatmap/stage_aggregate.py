@@ -19,6 +19,7 @@ from src.heatmap.render_stage_space import (
 )
 from src.heatmap.render_heatmaps import adjust_heat_for_display, team_display_color
 from src.heatmap.stage_registry import stage_entry
+from src.heatmap.stage_artifacts import stage_artifact_status
 
 
 # BGR. The left match reads warm, the right match reads cool.
@@ -27,7 +28,10 @@ RIGHT_ONLY_COLOR = (240, 170, 60)
 LABEL_COLOR = (170, 176, 186)
 
 
-def load_match_points(stage_csv: Path | str) -> dict[str, Any]:
+def load_match_points(stage_csv: Path | str, *, match_id: str | None = None, stage_id: str | None = None) -> dict[str, Any]:
+    calibration = stage_artifact_status(stage_csv, match_id=match_id, stage_id=stage_id)
+    if calibration["status"] != "ready":
+        return {"input": display_path(Path(stage_csv)), "input_rows": 0, "points": [], **calibration}
     rows = read_stage_rows(stage_csv)
     points = parse_stage_points(rows)
     return {
@@ -50,22 +54,27 @@ def collect_stage_matches(
 
     matches: list[dict[str, Any]] = []
     missing: list[str] = []
+    rejected: dict[str, str] = {}
     for match_id in entry.get("matches", []):
         csv_path = stage_csv_paths.get(match_id)
         if csv_path is None:
             missing.append(match_id)
             continue
-        loaded = load_match_points(csv_path)
+        loaded = load_match_points(csv_path, match_id=match_id, stage_id=stage_id)
         if loaded["status"] != "ready":
-            missing.append(match_id)
+            if loaded["status"] == "no_points":
+                missing.append(match_id)
+            else:
+                rejected[match_id] = loaded.get("reason", loaded["status"])
             continue
         matches.append({"match_id": match_id, **loaded})
 
     return {
-        "status": "ready" if matches else "no_data",
+        "status": "ready" if matches else ("needs_calibration" if rejected else "no_data"),
         "stage_id": stage_id,
         "matches": matches,
         "missing": missing,
+        "rejected": rejected,
     }
 
 
@@ -193,6 +202,7 @@ def build_stage_aggregate(
         "matches": [match["match_id"] for match in collected["matches"]],
         "match_count": len(collected["matches"]),
         "missing_matches": collected["missing"],
+        "rejected_matches": collected.get("rejected", {}),
         "canvas_size": canvas_size,
         "rendered": {},
     }
@@ -228,7 +238,7 @@ def build_stage_aggregate(
 
     return {
         **base,
-        "status": "ready" if len(matches) > 1 else "single_match",
+        "status": "needs_review" if collected.get("rejected") else ("ready" if len(matches) > 1 else "single_match"),
         "total_points": sum(len(match["points"]) for match in matches),
         "per_match_points": {match["match_id"]: len(match["points"]) for match in matches},
         "output_dir": display_path(target_dir),
@@ -249,6 +259,10 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "",
     ]
     per_match = report.get("per_match_points", {})
+    for match_id, reason in report.get("rejected_matches", {}).items():
+        lines.append(f"- excluded `{match_id}`: {reason}")
+    if report.get("rejected_matches"):
+        lines.append("")
     if per_match:
         lines.extend(["## Points Per Match", "", "| match | stage points |", "| --- | --- |"])
         lines.extend(f"| {match} | {count} |" for match, count in sorted(per_match.items()))
@@ -266,7 +280,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
                 "to make the aggregate meaningful.",
             ]
         )
-    elif report.get("status") in {"no_data", "unknown_stage"}:
+    elif report.get("status") in {"no_data", "unknown_stage", "needs_calibration"}:
         lines.extend(
             [
                 "",
